@@ -19,51 +19,11 @@ let currentSearchQuery = '';
 // Current active tab
 let currentTab = 'live';
 
-// Helper: Pluralize 'tab' based on count
-function pluralizeTabs(count) {
-  return `tab${count !== 1 ? 's' : ''}`;
-}
-
-// Helper: Clear all children from a container
-function clearContainer(container) {
-  while (container.firstChild) {
-    container.removeChild(container.firstChild);
-  }
-}
-
-// Helper: Check if URL should be skipped (chrome:// or extension pages)
-// Returns true only for chrome:// and extension pages, NOT for undefined URLs
-function isSkippableUrl(url) {
-  if (!url) return false; // Don't skip tabs with undefined URL - they're valid tabs
-  return url.startsWith('chrome://') || url.startsWith('chrome-extension://');
-}
-
-// Toast notification helper
-function showToast(message, type = 'info') {
-  const container = document.getElementById('toastContainer');
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-
-  const text = document.createElement('span');
-  text.textContent = message;
-
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'toast-close';
-  closeBtn.textContent = '\u00D7';
-  closeBtn.addEventListener('click', () => toast.remove());
-
-  toast.appendChild(text);
-  toast.appendChild(closeBtn);
-  container.appendChild(toast);
-
-  setTimeout(() => toast.remove(), 3000);
-}
-
-// Set loading state on button
-function setLoading(btn, loading) {
-  btn.classList.toggle('loading', loading);
-  btn.disabled = loading;
-}
+// Helper aliases for commonly used UIHelpers functions
+const pluralizeTabs = UIHelpers.pluralizeTabs.bind(UIHelpers);
+const clearContainer = UIHelpers.clearContainer.bind(UIHelpers);
+const showToast = UIHelpers.showToast.bind(UIHelpers);
+const setLoading = UIHelpers.setLoading.bind(UIHelpers);
 
 async function init() {
   await initTheme();
@@ -219,20 +179,8 @@ async function updateOpenTabsCache() {
 // Check if a URL matches any open tab and return the tab if found
 function findOpenTabByUrl(url) {
   if (!url || !openTabsCache.length) return null;
-  const normalizedUrl = normalizeUrlForComparison(url);
-  return openTabsCache.find(tab => normalizeUrlForComparison(tab.url) === normalizedUrl);
-}
-
-// Normalize URL for comparison (remove trailing slashes, handle variations)
-function normalizeUrlForComparison(url) {
-  if (!url) return '';
-  try {
-    const parsed = new URL(url);
-    let pathname = parsed.pathname.replace(/\/+$/, '');
-    return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}`;
-  } catch {
-    return url;
-  }
+  const normalizedUrl = UrlUtils.normalizeUrl(url);
+  return openTabsCache.find(tab => UrlUtils.normalizeUrl(tab.url) === normalizedUrl);
 }
 
 // Navigate to a specific tab
@@ -353,7 +301,7 @@ async function renderLiveTabsPanel() {
   const regularTabs = [];
 
   for (const tab of tabs) {
-    if (isSkippableUrl(tab.url)) continue;
+    if (UrlUtils.isSkippableUrl(tab.url)) continue;
 
     // Filter by search query if present
     if (searchQuery) {
@@ -443,7 +391,20 @@ function createHomeTabItem(tab, homePatterns) {
   unprotectBtn.setAttribute('aria-label', 'Remove from Home Tabs');
   unprotectBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    await removeTabFromHome(tab.url, homePatterns);
+    // Re-fetch fresh data instead of using stale closure values
+    try {
+      const currentTab = await chrome.tabs.get(tab.id);
+      const currentPatterns = await HomeTabs.getHomePatterns();
+      if (currentTab && currentTab.url) {
+        await removeTabFromHome(currentTab.url, currentPatterns);
+      } else {
+        showToast('Error: Tab no longer exists', 'error');
+      }
+    } catch (err) {
+      // Tab may have been closed - still try to remove the pattern using stored URL
+      const currentPatterns = await HomeTabs.getHomePatterns();
+      await removeTabFromHome(tab.url, currentPatterns);
+    }
   });
 
   item.appendChild(favicon);
@@ -496,7 +457,7 @@ function renderOpenTabsList(tabs) {
   }
 
   // Group tabs by domain
-  const domainGroups = groupTabsByDomain(tabs);
+  const domainGroups = UrlUtils.groupTabsByDomain(tabs);
 
   // Sort domains by tab count (descending)
   const sortedDomains = Object.keys(domainGroups).sort((a, b) =>
@@ -507,33 +468,10 @@ function renderOpenTabsList(tabs) {
   for (const domain of sortedDomains) {
     const domainTabs = domainGroups[domain];
     container.appendChild(createDomainGroupCard(domain, domainTabs));
-
-    // Add all tabs to selected by default
-    domainTabs.forEach(tab => selectedTabIds.add(tab.id));
+    // Tabs start unselected - user must explicitly select them
   }
 }
 
-// Group tabs by domain
-function groupTabsByDomain(tabs) {
-  const groups = {};
-  for (const tab of tabs) {
-    const domain = getDomainFromUrl(tab.url) || 'Other';
-    if (!groups[domain]) {
-      groups[domain] = [];
-    }
-    groups[domain].push(tab);
-  }
-  return groups;
-}
-
-// Get domain from URL
-function getDomainFromUrl(url) {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return null;
-  }
-}
 
 // Create a domain group card (accordion style)
 function createDomainGroupCard(domain, tabs) {
@@ -541,23 +479,29 @@ function createDomainGroupCard(domain, tabs) {
   card.className = 'domain-group-card';
   card.dataset.domain = domain;
 
-  // Restore expanded state if previously expanded
-  if (expandedDomainGroups.has(domain)) {
+  // Restore expanded state if previously expanded OR if searching (to show matching results)
+  const shouldExpand = expandedDomainGroups.has(domain) || currentSearchQuery;
+  if (shouldExpand) {
     card.classList.add('expanded');
   }
 
-  // Group header
+  // Group header (acts as button for accordion)
   const header = document.createElement('div');
   header.className = 'domain-group-header';
+  header.setAttribute('role', 'button');
+  header.setAttribute('tabindex', '0');
+  header.setAttribute('aria-expanded', shouldExpand ? 'true' : 'false');
+  header.setAttribute('aria-label', `${domain}, ${tabs.length} ${pluralizeTabs(tabs.length)}`);
 
   const expand = document.createElement('span');
   expand.className = 'domain-group-expand';
   expand.textContent = '\u25B6'; // Right triangle
+  expand.setAttribute('aria-hidden', 'true');
 
   const groupCheckbox = document.createElement('input');
   groupCheckbox.type = 'checkbox';
   groupCheckbox.className = 'domain-group-checkbox';
-  groupCheckbox.checked = true;
+  groupCheckbox.checked = false;
   groupCheckbox.title = 'Select all tabs in this domain';
   groupCheckbox.addEventListener('click', (e) => e.stopPropagation());
   groupCheckbox.addEventListener('change', (e) => {
@@ -602,14 +546,24 @@ function createDomainGroupCard(domain, tabs) {
   header.appendChild(info);
   header.appendChild(actions);
 
-  header.addEventListener('click', (e) => {
+  const toggleExpand = (e) => {
     if (e.target.closest('.domain-group-actions') || e.target.closest('.domain-group-checkbox')) return;
     card.classList.toggle('expanded');
+    const isExpanded = card.classList.contains('expanded');
+    header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
     // Track expanded state
-    if (card.classList.contains('expanded')) {
+    if (isExpanded) {
       expandedDomainGroups.add(domain);
     } else {
       expandedDomainGroups.delete(domain);
+    }
+  };
+
+  header.addEventListener('click', toggleExpand);
+  header.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleExpand(e);
     }
   });
 
@@ -637,7 +591,7 @@ function createDomainTabItem(tab, groupCard) {
   const checkbox = document.createElement('input');
   checkbox.type = 'checkbox';
   checkbox.className = 'domain-tab-checkbox';
-  checkbox.checked = true;
+  checkbox.checked = false;
 
   checkbox.addEventListener('change', () => {
     if (checkbox.checked) {
@@ -705,7 +659,18 @@ function createDomainTabItem(tab, groupCard) {
   protectBtn.setAttribute('aria-label', 'Add to Home Tabs');
   protectBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    await addTabToHome(tab.url);
+    // Re-fetch the tab's current URL to ensure we're using the latest
+    try {
+      const currentTab = await chrome.tabs.get(tab.id);
+      if (currentTab && currentTab.url) {
+        await addTabToHome(currentTab.url);
+      } else {
+        showToast('Error: Tab no longer exists', 'error');
+      }
+    } catch (err) {
+      // Tab may have been closed
+      showToast('Error: Tab no longer exists', 'error');
+    }
   });
 
   actions.appendChild(vaultBtn);
@@ -765,15 +730,52 @@ async function vaultDomainTabs(domain, tabs) {
 
 // Add a tab to home protection
 async function addTabToHome(tabUrl) {
-  await HomeTabs.addHomePattern(tabUrl);
-  showToast('Added to Home Tabs', 'success');
+  if (!tabUrl) {
+    showToast('Error: Invalid tab URL', 'error');
+    return;
+  }
+
+  const result = await HomeTabs.addHomePattern(tabUrl);
+  if (result.error) {
+    showToast(result.error, 'error');
+    return;
+  }
+
+  // If pattern already existed, still show success and ensure tab is visible
+  if (!result.added) {
+    // Pattern already exists - verify it actually matches
+    const savedPatterns = await HomeTabs.getHomePatterns();
+    if (!savedPatterns.includes(tabUrl)) {
+      showToast('Error: Failed to save pattern', 'error');
+      return;
+    }
+    showToast('Tab already protected', 'info');
+  } else {
+    // Verify the pattern was actually saved
+    const savedPatterns = await HomeTabs.getHomePatterns();
+    if (!savedPatterns.includes(tabUrl)) {
+      showToast('Error: Failed to save pattern', 'error');
+      return;
+    }
+    showToast('Added to Home Tabs', 'success');
+  }
+
+  // Clear search query to ensure the protected tab is visible
+  if (currentSearchQuery) {
+    currentSearchQuery = '';
+    document.getElementById('globalSearchInput').value = '';
+  }
+
+  // Expand home tabs section so the user can see the protected tab
+  homeTabsCollapsed = false;
+
   await renderLiveTabsPanel();
   updateSelectedCount();
 }
 
 // Vault a single tab (save to vault and close)
 async function vaultSingleTab(tab) {
-  const domain = getDomainFromUrl(tab.url) || 'Other';
+  const domain = UrlUtils.getDomainFromUrl(tab.url) || 'Other';
   const response = await chrome.runtime.sendMessage({
     action: 'shutdown-tabs',
     tabIds: [tab.id],
@@ -891,16 +893,22 @@ function createGroupCard(group) {
   // Group header
   const header = document.createElement('div');
   header.className = 'group-header';
+  header.setAttribute('role', 'button');
+  header.setAttribute('tabindex', '0');
+  header.setAttribute('aria-expanded', expandedVaultGroups.has(group.id) ? 'true' : 'false');
+  header.setAttribute('aria-label', `${group.name}, ${group.tabs.length} ${pluralizeTabs(group.tabs.length)}`);
 
   // Drag handle
   const dragHandle = document.createElement('span');
   dragHandle.className = 'group-drag-handle';
   dragHandle.textContent = '\u2630'; // Hamburger menu icon
   dragHandle.title = 'Drag to reorder';
+  dragHandle.setAttribute('aria-hidden', 'true');
 
   const expand = document.createElement('span');
   expand.className = 'group-expand';
   expand.textContent = '\u25B6'; // Right triangle
+  expand.setAttribute('aria-hidden', 'true');
 
   const info = document.createElement('div');
   info.className = 'group-info';
@@ -940,6 +948,9 @@ function createGroupCard(group) {
   const menuBtn = document.createElement('button');
   menuBtn.className = 'btn btn-secondary btn-small group-menu-btn';
   menuBtn.textContent = '\u22EE'; // Vertical ellipsis
+  menuBtn.setAttribute('aria-haspopup', 'menu');
+  menuBtn.setAttribute('aria-label', 'Group options');
+  menuBtn.title = 'Group options';
   menuBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     showGroupMenu(group, menuBtn);
@@ -954,14 +965,24 @@ function createGroupCard(group) {
   header.appendChild(info);
   header.appendChild(actions);
 
-  header.addEventListener('click', (e) => {
+  const toggleVaultExpand = (e) => {
     if (e.target.closest('.group-actions') || e.target.closest('.group-drag-handle')) return;
     card.classList.toggle('expanded');
+    const isExpanded = card.classList.contains('expanded');
+    header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
     // Track expanded state
-    if (card.classList.contains('expanded')) {
+    if (isExpanded) {
       expandedVaultGroups.add(group.id);
     } else {
       expandedVaultGroups.delete(group.id);
+    }
+  };
+
+  header.addEventListener('click', toggleVaultExpand);
+  header.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleVaultExpand(e);
     }
   });
 
@@ -995,11 +1016,26 @@ function createTabItem(tab, groupId) {
     item.classList.add('active-tab');
     item.dataset.openTabId = openTab.id;
     item.title = 'Click to navigate to this tab';
+    item.setAttribute('role', 'button');
+    item.setAttribute('tabindex', '0');
+    item.setAttribute('aria-label', `Navigate to ${tab.title || 'tab'}`);
     item.addEventListener('click', async (e) => {
       // Don't navigate if clicking on buttons
       if (e.target.closest('button')) return;
       await navigateToTab(openTab.id);
     });
+    // Keyboard support for navigation
+    item.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        await navigateToTab(openTab.id);
+      }
+    });
+  } else {
+    // Inactive tab - not clickable, show tooltip explaining why
+    item.classList.add('inactive-tab');
+    item.title = 'Tab not open \u2014 use Restore to open';
+    item.setAttribute('aria-label', `${tab.title || 'Tab'} (not open)`);
   }
 
   // Drag-and-drop attributes for vault tabs
@@ -1233,6 +1269,17 @@ async function vaultSelectedTabs() {
     return;
   }
 
+  const tabCount = selectedTabIds.size;
+
+  // Show confirmation dialog
+  const confirmed = await showModalConfirm(
+    'Vault Selected Tabs',
+    `Vault ${tabCount} selected ${pluralizeTabs(tabCount)}? They will be closed and saved to your vault.`,
+    'Vault'
+  );
+
+  if (!confirmed) return;
+
   // Always group by domain for selected tabs
   const response = await chrome.runtime.sendMessage({
     action: 'shutdown-tabs-by-domain',
@@ -1305,7 +1352,11 @@ async function addNewPattern() {
     return;
   }
 
-  await HomeTabs.addHomePattern(pattern);
+  const result = await HomeTabs.addHomePattern(pattern);
+  if (result.error) {
+    showToast(result.error, 'error');
+    return;
+  }
   input.value = '';
   await renderHomePatterns();
   showToast('Pattern added', 'success');
@@ -1316,7 +1367,11 @@ async function addCurrentTabAsPattern() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab && tab.url) {
-      await HomeTabs.addHomePattern(tab.url);
+      const result = await HomeTabs.addHomePattern(tab.url);
+      if (result.error) {
+        showToast(result.error, 'error');
+        return;
+      }
       await renderHomePatterns();
       showToast('Current tab added as home tab', 'success');
     }
@@ -1445,8 +1500,6 @@ function createSearchResultGroupCard(group, matchingTabs) {
 }
 
 // Shutdown all tabs (except home tabs)
-// Pending shutdown data for confirmation dialog
-let pendingShutdownData = null;
 
 async function shutdownAll() {
   const tabs = await chrome.tabs.query({});
@@ -1456,7 +1509,7 @@ async function shutdownAll() {
   const homeTabs = [];
 
   for (const tab of tabs) {
-    if (isSkippableUrl(tab.url)) continue;
+    if (UrlUtils.isSkippableUrl(tab.url)) continue;
     if (HomeTabs.isHomeTabSync(tab.url, homePatterns)) {
       homeTabs.push(tab);
     } else {
@@ -1507,6 +1560,125 @@ function showConfirmDialog(tabCount, homeTabCount) {
 function hideConfirmDialog() {
   const dialog = document.getElementById('confirmDialog');
   dialog.classList.add('hidden');
+}
+
+/**
+ * Show a themed confirmation dialog
+ * @param {string} title - Dialog title
+ * @param {string} message - Message to display
+ * @param {string} confirmText - Text for confirm button (default: "OK")
+ * @returns {Promise<boolean>} - True if confirmed, false if cancelled
+ */
+function showModalConfirm(title, message, confirmText = 'OK') {
+  return new Promise((resolve) => {
+    const dialog = document.getElementById('modalDialog');
+    const titleEl = document.getElementById('modalDialogTitle');
+    const messageEl = document.getElementById('modalDialogMessage');
+    const inputEl = document.getElementById('modalDialogInput');
+    const confirmBtn = document.getElementById('modalDialogConfirm');
+    const cancelBtn = document.getElementById('modalDialogCancel');
+
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    inputEl.classList.add('hidden');
+    confirmBtn.textContent = confirmText;
+
+    const cleanup = () => {
+      dialog.classList.add('hidden');
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      document.removeEventListener('keydown', onKeydown);
+    };
+
+    const onConfirm = () => {
+      cleanup();
+      resolve(true);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve(false);
+    };
+
+    const onKeydown = (e) => {
+      if (e.key === 'Escape') {
+        onCancel();
+      } else if (e.key === 'Enter') {
+        onConfirm();
+      }
+    };
+
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+    document.addEventListener('keydown', onKeydown);
+
+    dialog.classList.remove('hidden');
+    confirmBtn.focus();
+  });
+}
+
+/**
+ * Show a themed prompt dialog
+ * @param {string} title - Dialog title
+ * @param {string} message - Message to display
+ * @param {string} defaultValue - Default input value
+ * @returns {Promise<string|null>} - Input value if confirmed, null if cancelled
+ */
+function showModalPrompt(title, message, defaultValue = '') {
+  return new Promise((resolve) => {
+    const dialog = document.getElementById('modalDialog');
+    const titleEl = document.getElementById('modalDialogTitle');
+    const messageEl = document.getElementById('modalDialogMessage');
+    const inputEl = document.getElementById('modalDialogInput');
+    const confirmBtn = document.getElementById('modalDialogConfirm');
+    const cancelBtn = document.getElementById('modalDialogCancel');
+
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    inputEl.classList.remove('hidden');
+    inputEl.value = defaultValue;
+    confirmBtn.textContent = 'OK';
+
+    const cleanup = () => {
+      dialog.classList.add('hidden');
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      inputEl.removeEventListener('keydown', onInputKeydown);
+      document.removeEventListener('keydown', onKeydown);
+    };
+
+    const onConfirm = () => {
+      cleanup();
+      resolve(inputEl.value);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve(null);
+    };
+
+    const onInputKeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        onConfirm();
+      }
+    };
+
+    const onKeydown = (e) => {
+      if (e.key === 'Escape') {
+        onCancel();
+      }
+    };
+
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+    inputEl.addEventListener('keydown', onInputKeydown);
+    document.addEventListener('keydown', onKeydown);
+
+    dialog.classList.remove('hidden');
+    inputEl.focus();
+    inputEl.select();
+  });
 }
 
 // Handle confirm button click
@@ -1564,7 +1736,11 @@ async function restoreGroup(groupId) {
   if (group.tabs.length >= 10) {
     const skipConfirm = await Settings.getSetting('skipLargeRestoreConfirm');
     if (!skipConfirm) {
-      const confirmed = confirm(`Restore ${group.tabs.length} ${pluralizeTabs(group.tabs.length)}? This will open them all in new tabs.`);
+      const confirmed = await showModalConfirm(
+        'Restore Group',
+        `Restore ${group.tabs.length} ${pluralizeTabs(group.tabs.length)}? This will open them all in new tabs.`,
+        'Restore'
+      );
       if (!confirmed) return;
     }
   }
@@ -1637,20 +1813,65 @@ async function showGroupMenu(group, anchorEl) {
   const existingMenu = document.querySelector('.group-menu-dropdown');
   if (existingMenu) existingMenu.remove();
 
+  // Get vault to determine group position
+  const vault = await VaultStorage.getVault();
+  const groupIndex = vault.groups.findIndex(g => g.id === group.id);
+  const isFirst = groupIndex === 0;
+  const isLast = groupIndex === vault.groups.length - 1;
+
   const menu = document.createElement('div');
   menu.className = 'group-menu-dropdown';
+  menu.setAttribute('role', 'menu');
 
   const renameOption = document.createElement('button');
   renameOption.className = 'menu-option';
+  renameOption.setAttribute('role', 'menuitem');
   renameOption.textContent = 'Rename';
-  renameOption.addEventListener('click', (e) => {
+  renameOption.addEventListener('click', async (e) => {
     e.stopPropagation();
     menu.remove();
-    showRenameDialog(group);
+    await showRenameDialog(group);
+  });
+
+  // Move Up option (disabled if first)
+  const moveUpOption = document.createElement('button');
+  moveUpOption.className = 'menu-option';
+  moveUpOption.setAttribute('role', 'menuitem');
+  moveUpOption.textContent = 'Move Up';
+  moveUpOption.disabled = isFirst;
+  if (isFirst) {
+    moveUpOption.classList.add('menu-option-disabled');
+    moveUpOption.setAttribute('aria-disabled', 'true');
+  }
+  moveUpOption.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (isFirst) return;
+    menu.remove();
+    await moveGroup(group.id, -1);
+    showToast('Group moved up', 'success');
+  });
+
+  // Move Down option (disabled if last)
+  const moveDownOption = document.createElement('button');
+  moveDownOption.className = 'menu-option';
+  moveDownOption.setAttribute('role', 'menuitem');
+  moveDownOption.textContent = 'Move Down';
+  moveDownOption.disabled = isLast;
+  if (isLast) {
+    moveDownOption.classList.add('menu-option-disabled');
+    moveDownOption.setAttribute('aria-disabled', 'true');
+  }
+  moveDownOption.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (isLast) return;
+    menu.remove();
+    await moveGroup(group.id, 1);
+    showToast('Group moved down', 'success');
   });
 
   const deleteOption = document.createElement('button');
   deleteOption.className = 'menu-option menu-option-danger';
+  deleteOption.setAttribute('role', 'menuitem');
   deleteOption.textContent = 'Delete';
   deleteOption.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -1659,6 +1880,8 @@ async function showGroupMenu(group, anchorEl) {
   });
 
   menu.appendChild(renameOption);
+  menu.appendChild(moveUpOption);
+  menu.appendChild(moveDownOption);
   menu.appendChild(deleteOption);
 
   // Position menu relative to anchor
@@ -1680,10 +1903,10 @@ async function showGroupMenu(group, anchorEl) {
 }
 
 // Show rename dialog
-function showRenameDialog(group) {
-  const newName = prompt('Enter new group name:', group.name);
+async function showRenameDialog(group) {
+  const newName = await showModalPrompt('Rename Group', 'Enter new group name:', group.name);
   if (newName && newName.trim() && newName !== group.name) {
-    renameGroup(group.id, newName.trim());
+    await renameGroup(group.id, newName.trim());
   }
 }
 
@@ -1696,7 +1919,11 @@ async function renameGroup(groupId, newName) {
 
 // Delete a group
 async function deleteGroup(group) {
-  const confirmed = confirm(`Delete "${group.name}" and all ${group.tabs.length} ${pluralizeTabs(group.tabs.length)} in it?`);
+  const confirmed = await showModalConfirm(
+    'Delete Group',
+    `Delete "${group.name}" and all ${group.tabs.length} ${pluralizeTabs(group.tabs.length)} in it?`,
+    'Delete'
+  );
   if (confirmed) {
     await VaultStorage.removeGroup(group.id);
     showToast('Group deleted', 'success');
@@ -1721,23 +1948,9 @@ async function moveGroup(groupId, direction) {
   await renderVaultGroups();
 }
 
-// Utility: Get default favicon
-function getDefaultFavicon() {
-  return 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect fill=%22%23ddd%22 width=%2216%22 height=%2216%22 rx=%222%22/></svg>';
-}
-
-// Utility: Truncate URL for display
-function truncateUrl(url) {
-  if (!url) return '';
-  try {
-    const parsed = new URL(url);
-    const path = parsed.pathname + parsed.search;
-    const truncatedPath = path.length > 40 ? path.substring(0, 40) + '...' : path;
-    return parsed.hostname + truncatedPath;
-  } catch {
-    return url.length > 50 ? url.substring(0, 50) + '...' : url;
-  }
-}
+// Helper aliases for remaining UIHelpers functions
+const getDefaultFavicon = UIHelpers.getDefaultFavicon.bind(UIHelpers);
+const truncateUrl = UIHelpers.truncateUrl.bind(UIHelpers);
 
 // ============================================
 // DRAG AND DROP HANDLERS (Infrastructure for TV2-007)

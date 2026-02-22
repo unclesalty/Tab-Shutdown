@@ -29,8 +29,8 @@ Tab Goblin follows the Chrome Extension Manifest V3 architecture:
 │                                                          │
 │  ┌──────────────┐     Messages      ┌─────────────────┐ │
 │  │              │ ◄───────────────► │                 │ │
-│  │    Popup     │                   │ Service Worker  │ │
-│  │  (popup.js)  │                   │  (background)   │ │
+│  │  Side Panel  │                   │ Service Worker  │ │
+│  │(sidepanel.js)│                   │  (background)   │ │
 │  │              │                   │                 │ │
 │  └──────┬───────┘                   └────────┬────────┘ │
 │         │                                    │          │
@@ -55,7 +55,7 @@ Tab Goblin follows the Chrome Extension Manifest V3 architecture:
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| Popup | `src/popup/*` | User interface |
+| Side Panel | `src/sidepanel/*` | User interface |
 | Service Worker | `src/background/service-worker.js` | Tab operations (shutdown/restore) |
 | Storage Module | `src/common/storage.js` | Vault data CRUD |
 | Home Tabs Module | `src/common/home-tabs.js` | URL pattern matching |
@@ -92,21 +92,21 @@ v2 replaces the popup with a persistent side panel using the `chrome.sidePanel` 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 ```
 
-### New File Structure
+### File Structure
 
 ```
 src/
-├── sidepanel/           # NEW - Side panel UI (v2)
+├── sidepanel/           # Side panel UI (primary interface)
 │   ├── sidepanel.html
 │   ├── sidepanel.css
 │   └── sidepanel.js
-├── popup/               # DEPRECATED - Removed in v2
 ├── background/
 │   └── service-worker.js
 └── common/
     ├── storage.js
     ├── home-tabs.js
-    └── settings.js
+    ├── settings.js
+    └── themes.js
 ```
 
 ### Key Differences from Popup
@@ -152,11 +152,12 @@ chrome_tab_shutdown/
 │   ├── common/
 │   │   ├── storage.js           # Vault storage operations
 │   │   ├── home-tabs.js         # Home tab pattern matching
-│   │   └── settings.js          # User settings storage
-│   └── popup/
-│       ├── popup.html           # Popup structure
-│       ├── popup.css            # Popup styles
-│       └── popup.js             # Popup logic
+│   │   ├── settings.js          # User settings storage
+│   │   └── themes.js            # Theme definitions and API
+│   └── sidepanel/
+│       ├── sidepanel.html       # Side panel structure
+│       ├── sidepanel.css        # Side panel styles
+│       └── sidepanel.js         # Side panel logic
 ├── documentation/               # This documentation
 ├── PRD.md                       # Product requirements
 ├── TICKETS.md                   # Implementation tickets
@@ -234,14 +235,14 @@ Background script handling tab operations.
 'get-domain-groups'  // Get open tabs grouped by domain
 ```
 
-### popup.js
+### sidepanel.js
 
 UI logic and user interaction.
 
 Key functions:
-- `init()` — Initialize popup on load
+- `init()` — Initialize side panel on load
 - `renderVaultGroups()` — Display vault groups
-- `showSelectTabsView()` — Tab selection UI
+- `renderLiveTabsAccordion()` — Display live tabs grouped by domain
 - `shutdownAll()` — Vault all tabs
 - `restoreGroup(groupId)` — Restore a group
 - `showToast(message, type)` — Show notification
@@ -509,12 +510,12 @@ VaultStorage.addGroup('Test Group', [
 3. Click "service worker" link
 4. DevTools opens for background script
 
-### Popup Debugging
+### Side Panel Debugging
 
-1. Open the popup
-2. Right-click inside popup
+1. Open the side panel
+2. Right-click inside side panel
 3. Select "Inspect"
-4. DevTools opens for popup
+4. DevTools opens for side panel
 
 ### Common Issues
 
@@ -581,14 +582,14 @@ const value = await Settings.getSetting('myNewSetting');
 
 ### Adding a New View
 
-1. Add HTML structure in popup.html:
+1. Add HTML structure in sidepanel.html:
 ```html
 <div id="myView" class="view hidden">
   <!-- content -->
 </div>
 ```
 
-2. Add show function in popup.js:
+2. Add show function in sidepanel.js:
 ```javascript
 function showMyView() {
   showView('myView');
@@ -596,7 +597,7 @@ function showMyView() {
 }
 ```
 
-3. Add styles in popup.css.
+3. Add styles in sidepanel.css.
 
 ---
 

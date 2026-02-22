@@ -1,295 +1,263 @@
-# PRD: Tab Goblin v3 — Chrome Extension
+# PRD: Tab Goblin v4 — Architecture Refactor
 
 ## Overview
 
-**Tab Goblin** (formerly Tab Vault) is a Chrome extension that solves RAM/CPU drain from too many tabs while preserving them as workflow aids. Tabs are either live (open) or vaulted (fully closed and saved). No suspension, no halfway — closed is closed.
+**Tab Goblin** is a Chrome extension that solves RAM/CPU drain from too many tabs while preserving them as workflow aids. Tabs are either live (open) or vaulted (fully closed and saved). No suspension, no halfway — closed is closed.
 
-## v3 Goals
+## v4 Goals
 
-1. **Bug Fix:** Resolve Live Tabs panel not displaying open tabs
-2. **Rebrand:** Rename from "Tab Vault" to "Tab Goblin"
-3. **Theme System:** Add light/dark/system/custom theme support
-4. **UI Refinement:** Simplified header, consistent visual styling
-5. **Navigation:** Click active tabs to navigate, auto-navigate on restore
+This release focuses on **architectural improvements** and **code quality** based on the comprehensive code review (`context_items/opus-cursor-review.md`). No new user-facing features — this is a foundation-strengthening release.
 
----
-
-## Core Concept
-
-A tab exists in one of two states:
-- **Live** — open in the browser, consuming resources
-- **Vaulted** — fully closed, saved with URL/title/favicon, grouped by domain
-
-Vaulted tabs are *closed*, not sleeping. This is what actually frees RAM/CPU.
+1. **Eliminate Code Duplication** — Extract shared logic into common modules
+2. **Unify Behavioral Contracts** — Single implementation for URL handling, navigation, drag-and-drop
+3. **Remove Dead Code** — Archive unreachable popup, remove unused variables
+4. **Fix CSS Issues** — Syntax errors, performance-impacting rules
+5. **Improve Accessibility** — Complete ARIA attributes, keyboard alternatives
+6. **Add Concurrency Protection** — Prevent race conditions in storage operations
 
 ---
 
-## Features
+## Problem Statement
 
-### 1. Vault Groups
+The v3 codebase has a **systemic lack of shared abstractions**. The sidepanel and popup (now dead code) diverged into parallel implementations with subtly different logic. This creates:
 
-Tabs are organized into **groups** inside the vault.
+- **Inconsistent behavior** — Same function behaves differently in different contexts
+- **Maintenance burden** — Fixes in one place don't propagate to others
+- **Bug risk** — Drift between implementations causes subtle issues
+- **Code bloat** — ~3000 lines when ~1500 would suffice
 
-- A group has a name and contains one or more vaulted tabs
-- Users can create groups manually or let the extension auto-group by domain
-- Groups can be renamed, reordered, and deleted
-- Groups persist across browser restarts (`chrome.storage.local`)
-- Drag-and-drop tabs between groups
+---
 
-### 2. Shutdown (Vault Tabs)
+## Architecture Changes
 
-"Shutdown" closes live tabs and saves them to the vault.
+### Phase 1: Resolve Popup vs Sidepanel
 
-- **Shutdown selected tabs** — user picks which tabs to vault
-- **Shutdown all tabs** — vaults everything except home tabs
-- **Shutdown by domain** — vault all tabs from a domain group
-- Confirmation dialog for "Shutdown All" (always shown for 10+ tabs)
-- Tabs auto-grouped by domain or into custom named group
+**Decision: Archive the popup.**
 
-### 3. Restore (Open Tabs)
+The popup is unreachable (no `default_popup` in manifest.json). The sidepanel is the primary UI. Maintaining two parallel implementations is the root cause of behavioral divergence.
 
-"Restore" reopens vaulted tabs and removes them from the vault.
+**Actions:**
+- Move `src/popup/` to `archive/popup-v3/`
+- Remove popup references from documentation
+- Single UI codebase going forward
 
-- **Restore a group** — reopens all tabs in a group, navigates to first tab
-- **Restore individual tabs** — pick specific tabs, navigates to restored tab
-- **Copy (Duplicate)** — open without removing from vault
-- Confirmation for large restores (10+ tabs)
-- **Auto-navigate** — browser automatically switches to restored tab(s)
+### Phase 2: Extract Shared Modules
 
-### 4. Home Tabs (Protected)
+Create new modules in `src/common/`:
 
-Users designate certain tabs or URLs as "home tabs" that are never vaulted.
-
-- Home tabs are excluded from "shutdown all" operations
-- Supports URL wildcard patterns (e.g., `*://mail.google.com/*`)
-- Quick add/remove from Live Tabs panel
-- Distinct visual section in Live Tabs view
-
-### 5. Side Panel UI
-
-The side panel is the primary interface, opened by clicking the extension icon.
-
-**Three-Tab Navigation:**
-- **Vault** — Vaulted groups with search, restore/copy actions
-- **Live Tabs** — Home section + open tabs grouped by domain
-- **Settings** — Home tab pattern configuration, theme selection
-
-**Header Area:**
-- "Shutdown All" button (always visible)
-- Clean, minimal design (same background as panel content)
-
-**Status Bar:**
-- Live tab count at bottom
-
-### 6. Theme System
-
-Users can select their preferred visual theme.
-
-**Theme Modes:**
-- **System** (default) — Follows OS light/dark preference
-- **Light** — Light color scheme
-- **Dark** — Dark color scheme
-- **Custom** — User-selectable theme palette
-
-**Built-in Theme Palettes (Dark):**
-1. **Midnight Glass** — Cool, minimal, techy (blues)
-2. **Neon Ember** — Warm, bold, high energy (oranges)
-3. **Soft Lavender** — Calm, muted purple, zen
-4. **Arctic Mint** — Fresh, clean, nature-tech (greens)
-5. **Slate Minimal** — Neutral pro, pure function (grays/indigos)
-
-**Light Mode Palettes:**
-- Light versions of each palette with appropriate contrast
-
-**Theme Variables:**
-| Variable | Purpose |
-|----------|---------|
-| `--bg` | Main background |
-| `--bg-surface` | Cards, sections |
-| `--bg-hover` | Hover states |
-| `--primary` | Primary action buttons |
-| `--primary-hover` | Button hover |
-| `--accent` | Active states, highlights |
-| `--text` | Primary text |
-| `--text-secondary` | Secondary/muted text |
-| `--text-on-primary` | Text on primary buttons |
-| `--border` | Borders, dividers |
-| `--success` | Success toasts |
-| `--error` | Error toasts, danger actions |
-| `--warning` | Warning states |
-
-**Implementation Requirements:**
-- All colors via CSS custom properties
-- Theme class on root element (e.g., `data-theme="midnight-glass"`)
-- `prefers-color-scheme` media query for system mode
-- Ensure text contrast meets WCAG AA (4.5:1 minimum)
-- Icons/imagery must be visible in all themes
-
-### 7. Keyboard Shortcuts
-
-- `Alt+Shift+V` — Vault current tab
-- `Alt+Shift+A` — Vault all tabs (except home)
-- Standard keyboard navigation within panel
-
-### 8. Tab Navigation
-
-Navigate between vault and live tabs seamlessly.
-
-**Active Tab Indicators:**
-- Vault panel shows which vaulted tabs are currently open in the browser
-- "Active" badge/indicator on tabs that match open browser tabs
-- Real-time updates as tabs are opened/closed
-
-**Click to Navigate:**
-- Clicking an active vault tab navigates to that open tab
-- Focuses both the tab and its containing window
-- Works across multiple windows
-
-**Auto-Navigate on Restore:**
-- Restoring a single tab navigates to the restored tab
-- Restoring a group navigates to the first restored tab
-- Browser window is focused automatically
-
-**Chrome APIs:**
+#### `src/common/ui-helpers.js`
 ```javascript
-// Navigate to a tab
-await chrome.tabs.update(tabId, { active: true });
-await chrome.windows.update(windowId, { focused: true });
+// Shared UI utilities
+pluralizeTabs(count)        // "1 tab" vs "5 tabs"
+clearContainer(element)      // Remove all children
+showToast(message, type)    // Toast notifications
+setLoading(container, bool) // Loading state
+getDefaultFavicon(url)      // Favicon fallback
+truncateUrl(url, maxLen)    // URL display truncation
 ```
 
----
-
-## UI Changes from v2
-
-### Header
-- **Remove:** Blue background banner with "Tab Vault" title
-- **Keep:** "Shutdown All" button, repositioned
-- **Result:** Clean, minimal header that matches panel background
-
-### Emojis
-- **Remove:** All emoji characters from UI
-- **Replace with:** Text labels or placeholder for future icons
-- Affected: Home tabs icon (house emoji), expand/collapse arrows
-
-### Naming
-- **Old:** Tab Vault
-- **New:** Tab Goblin
-- Update in: manifest.json, HTML titles, onboarding, documentation
-
----
-
-## Technical Requirements
-
-### Bug Fix: Live Tabs Not Displaying
-
-**Symptom:** Live Tabs panel shows "Open Tabs: 0" but status bar shows actual count (e.g., 43)
-
-**Investigation Areas:**
-1. `chrome.tabs.query({})` may return tabs without `url` property
-2. Need to check if `tabs` permission grants full URL access in side panel context
-3. The `isSkippableUrl()` function returns true when `!url` — may be filtering all tabs
-
-**Fix Approach:**
-- Debug `chrome.tabs.query({})` response in side panel
-- Verify tabs permission is sufficient
-- Handle case where URL might be undefined initially
-- Consider using `chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] })` to filter
-
-### Theme System Architecture
-
-**Storage:**
+#### `src/common/url-utils.js`
 ```javascript
-{
-  settings: {
-    themeMode: 'system' | 'light' | 'dark' | 'custom',
-    themePalette: 'midnight-glass' | 'neon-ember' | 'soft-lavender' | 'arctic-mint' | 'slate-minimal',
-    // ... other settings
-  }
+// URL handling (SINGLE source of truth)
+isSkippableUrl(url)         // chrome://, chrome-extension://, undefined
+getDomainFromUrl(url)       // Extract domain
+normalizeUrl(url)           // Normalize for comparison
+groupTabsByDomain(tabs)     // Group tabs by domain
+```
+
+#### `src/common/vault-ui.js`
+```javascript
+// Vault rendering (parameterized for features)
+createGroupCard(group, options)  // Options: { draggable, menuItems }
+createTabItem(tab, options)      // Options: { checkbox, dragEnabled }
+renderVaultGroups(groups, options)
+renderSearchResults(results, options)
+```
+
+### Phase 3: Unify Behavioral Contracts
+
+#### URL Skipping (Critical Fix)
+Current divergence:
+- `sidepanel.js`: `if (!url) return false` — tabs without URLs are included
+- `popup.js` / `service-worker.js`: `return !url || ...` — tabs without URLs are skipped
+
+**Decision:** Tabs without URLs should be skipped (they're edge cases like about:blank or loading tabs).
+
+Single implementation in `url-utils.js`:
+```javascript
+function isSkippableUrl(url) {
+  return !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://');
 }
 ```
 
-**CSS Structure:**
+#### Click Behavior Contract
+Universal interaction model:
+| Context | Row Click | Checkbox Click | Button Click |
+|---------|-----------|----------------|--------------|
+| Live Tabs | Navigate to tab | Toggle selection | Action |
+| Vault (active) | Navigate to tab | N/A | Action |
+| Vault (inactive) | Show tooltip | N/A | Action |
+
+#### Drag-and-Drop Contract
+Both drag-and-drop AND menu-based reordering should be available:
+- Add "Move Up/Down" to sidepanel vault group menu
+- ARIA attributes on all draggable elements
+- Live region announcements for screen readers
+
+### Phase 4: Fix CSS Issues
+
+#### Syntax Error (Line 857-858)
 ```css
-/* Base variables (light mode defaults) */
-:root {
-  --bg: #ffffff;
-  --text: #333333;
-  /* ... */
+/* REMOVE orphaned declaration */
+.domain-tab-checkbox {
+  margin-right: 8px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+  border-bottom: 1px solid var(--border); /* ORPHANED - REMOVE */
+}                                          /* STRAY BRACE - REMOVE */
+```
+
+#### Universal Transition Rule
+```css
+/* REMOVE - causes performance issues */
+*, *::before, *::after {
+  transition-property: background-color, border-color, color;
+  ...
 }
 
-/* Dark mode system preference */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    --bg: #0f172a;
-    /* ... */
-  }
-}
-
-/* Explicit theme overrides */
-[data-theme="midnight-glass"] {
-  --bg: #0f172a;
-  --bg-surface: #1e293b;
-  --primary: #0ea5e9;
-  --accent: #7dd3fc;
-  --text: #e2e8f0;
-  --text-secondary: #64748b;
-  /* ... */
+/* REPLACE WITH specific selectors */
+.tab-btn, .group-header, .domain-group-header,
+.home-tab-item, .btn, .tab-action-btn {
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 ```
 
-**Theme Application:**
-- On load: Read setting, apply `data-theme` attribute
-- On change: Update attribute, save to storage
-- System mode: No attribute, let CSS handle via media query
+### Phase 5: Theme Consolidation
+
+Current state: Theme colors defined in both `themes.js` and `sidepanel.css`. The JS colors are **never used** — CSS is the actual source of truth.
+
+**Decision:** Remove color definitions from `themes.js`. Keep only:
+- `applyTheme(themeKey)` — Sets `data-theme` attribute
+- `getThemeKeys()` — Returns available themes
+- `getDarkThemes()` — Returns dark theme list for UI
+
+CSS remains the single source of truth for colors.
+
+### Phase 6: Storage Concurrency
+
+Add mutex/lock to prevent race conditions:
+
+```javascript
+// VaultStorage with concurrency protection
+class VaultStorage {
+  static #lock = null;
+
+  static async #withLock(operation) {
+    while (this.#lock) await this.#lock;
+    let resolve;
+    this.#lock = new Promise(r => resolve = r);
+    try {
+      return await operation();
+    } finally {
+      resolve();
+      this.#lock = null;
+    }
+  }
+
+  static async addTabsToGroup(groupId, tabs) {
+    return this.#withLock(async () => {
+      const vault = await this.getVault();
+      // ... modify ...
+      await this.saveVault(vault);
+    });
+  }
+}
+```
 
 ---
 
-## Non-Goals (v3)
+## Non-Goals (v4)
 
+- New user-facing features
+- Additional themes
+- Export/import functionality
 - Cross-device sync
-- Export/import vault data
-- Chrome tab groups integration
-- Multiple workspaces
-- Tab preview thumbnails
-- Analytics or usage tracking
+- Breaking API changes to message passing
 
 ---
 
 ## Success Criteria
 
-- Live Tabs panel correctly displays all open browser tabs
-- Theme switching works instantly with no flash
-- All text readable in all themes (contrast ratio >= 4.5:1)
-- 50 tabs shutdown in < 2 seconds
-- 500+ tabs in vault loads without lag
-- Zero data loss across restarts
-- Home tabs never accidentally vaulted
-- Keyboard fully accessible
+- [ ] `src/popup/` archived, no references in active code
+- [ ] Single `isSkippableUrl()` in `src/common/url-utils.js`
+- [ ] All shared functions extracted to `src/common/` modules
+- [ ] CSS syntax error fixed
+- [ ] Universal transition rule replaced with specific selectors
+- [ ] Theme colors only in CSS, not JS
+- [ ] Storage operations protected from race conditions
+- [ ] All ARIA attributes complete
+- [ ] Code reduced from ~3000 lines to ~1800 lines
+- [ ] All existing functionality preserved (regression-free)
 
 ---
 
-## File Structure
+## File Structure (v4 Target)
 
 ```
 chrome_tab_shutdown/
-├── manifest.json           # Update name to "Tab Goblin"
+├── manifest.json
 ├── src/
-│   ├── sidepanel/
-│   │   ├── sidepanel.html  # Update title, remove emojis
-│   │   ├── sidepanel.css   # Theme system, header changes
-│   │   └── sidepanel.js    # Bug fix, theme logic
+│   ├── sidepanel/              # Primary UI
+│   │   ├── sidepanel.html
+│   │   ├── sidepanel.css       # Theme system (single source of truth)
+│   │   └── sidepanel.js        # Imports from common/
 │   ├── background/
-│   │   └── service-worker.js
-│   ├── common/
-│   │   ├── storage.js
-│   │   ├── home-tabs.js
-│   │   ├── settings.js     # Add theme settings
-│   │   └── themes.js       # NEW: Theme definitions
+│   │   └── service-worker.js   # Imports from common/
+│   ├── common/                 # Shared modules (NEW)
+│   │   ├── storage.js          # VaultStorage with concurrency
+│   │   ├── home-tabs.js        # HomeTabStorage
+│   │   ├── settings.js         # Settings
+│   │   ├── themes.js           # Theme API (no color definitions)
+│   │   ├── url-utils.js        # NEW: URL handling
+│   │   ├── ui-helpers.js       # NEW: UI utilities
+│   │   └── vault-ui.js         # NEW: Vault rendering
 │   └── assets/
-├── documentation/          # Update all docs
-├── archive/               # Archived v1/v2 docs
-├── PRD.md                 # This file
-├── TICKETS.md             # Implementation tickets
-├── PROMPT.md              # Ralph Loop instructions
-└── CLAUDE.md              # AI assistant instructions
+├── archive/
+│   ├── popup-v3/               # Archived popup code
+│   └── ...
+├── context_items/
+│   └── opus-cursor-review.md   # Code review reference
+├── documentation/
+├── PRD.md                      # This file
+├── TICKETS.md                  # Implementation tickets
+└── CLAUDE.md                   # AI assistant instructions
 ```
+
+---
+
+## Risk Assessment
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| Regressions during refactor | Medium | High | Comprehensive manual testing, test each phase |
+| Module import issues | Low | Medium | Use consistent import pattern, test in browser |
+| Storage race condition fix breaks edge cases | Low | High | Test concurrent operations explicitly |
+| CSS changes affect theme appearance | Low | Medium | Visual review in all themes |
+
+---
+
+## Dependencies
+
+- Chrome Extension APIs (tabs, storage, sidePanel)
+- Vanilla JavaScript (no frameworks)
+- CSS custom properties (browser support: all modern browsers)
+
+---
+
+## References
+
+- **Code Review:** `context_items/opus-cursor-review.md`
+- **v3 PRD (archived):** `archive/PRD-v3-2026-02-22.md`
+- **v3 TICKETS (archived):** `archive/TICKETS-v3-2026-02-22.md`

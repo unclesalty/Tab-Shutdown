@@ -1,124 +1,36 @@
 // Tab Goblin - Themes Module
 // Defines theme configurations for the extension
+// Note: Actual colors are defined in CSS via [data-theme="..."] selectors.
+// This module only tracks theme metadata for the UI.
 
 /**
  * Theme definitions
- * Each theme contains colors for all UI elements
+ * Colors are defined in CSS (sidepanel.css), not here.
  */
 const THEMES = {
   'light': {
     name: 'Light',
-    type: 'light',
-    colors: {
-      bg: '#ffffff',
-      bgSurface: '#f9f9f9',
-      bgHover: '#f5f5f5',
-      primary: '#4A90D9',
-      primaryHover: '#3a7bc8',
-      accent: '#4A90D9',
-      text: '#333333',
-      textSecondary: '#666666',
-      textOnPrimary: '#ffffff',
-      border: '#e0e0e0',
-      success: '#28a745',
-      error: '#dc3545',
-      warning: '#ffc107'
-    }
+    type: 'light'
   },
   'midnight-glass': {
     name: 'Midnight Glass',
-    type: 'dark',
-    colors: {
-      bg: '#0f172a',
-      bgSurface: '#1e293b',
-      bgHover: '#334155',
-      primary: '#0ea5e9',
-      primaryHover: '#0284c7',
-      accent: '#7dd3fc',
-      text: '#e2e8f0',
-      textSecondary: '#64748b',
-      textOnPrimary: '#ffffff',
-      border: '#334155',
-      success: '#22c55e',
-      error: '#ef4444',
-      warning: '#f59e0b'
-    }
+    type: 'dark'
   },
   'neon-ember': {
     name: 'Neon Ember',
-    type: 'dark',
-    colors: {
-      bg: '#0c0a09',
-      bgSurface: '#292524',
-      bgHover: '#44403c',
-      primary: '#f97316',
-      primaryHover: '#ea580c',
-      accent: '#fb923c',
-      text: '#fafaf9',
-      textSecondary: '#78716c',
-      textOnPrimary: '#ffffff',
-      border: '#44403c',
-      success: '#22c55e',
-      error: '#ef4444',
-      warning: '#f59e0b'
-    }
+    type: 'dark'
   },
   'soft-lavender': {
     name: 'Soft Lavender',
-    type: 'dark',
-    colors: {
-      bg: '#13111f',
-      bgSurface: '#2e2a45',
-      bgHover: '#3d3760',
-      primary: '#8b5cf6',
-      primaryHover: '#7c3aed',
-      accent: '#c4b5fd',
-      text: '#f5f3ff',
-      textSecondary: '#6b6591',
-      textOnPrimary: '#ffffff',
-      border: '#3d3760',
-      success: '#22c55e',
-      error: '#ef4444',
-      warning: '#f59e0b'
-    }
+    type: 'dark'
   },
   'arctic-mint': {
     name: 'Arctic Mint',
-    type: 'dark',
-    colors: {
-      bg: '#091415',
-      bgSurface: '#1a2e30',
-      bgHover: '#264548',
-      primary: '#10b981',
-      primaryHover: '#059669',
-      accent: '#6ee7b7',
-      text: '#ecfdf5',
-      textSecondary: '#5e8a7a',
-      textOnPrimary: '#ffffff',
-      border: '#264548',
-      success: '#22c55e',
-      error: '#ef4444',
-      warning: '#f59e0b'
-    }
+    type: 'dark'
   },
   'slate-minimal': {
     name: 'Slate Minimal',
-    type: 'dark',
-    colors: {
-      bg: '#09090b',
-      bgSurface: '#27272a',
-      bgHover: '#3f3f46',
-      primary: '#6366f1',
-      primaryHover: '#4f46e5',
-      accent: '#a5b4fc',
-      text: '#fafafa',
-      textSecondary: '#71717a',
-      textOnPrimary: '#ffffff',
-      border: '#3f3f46',
-      success: '#22c55e',
-      error: '#ef4444',
-      warning: '#f59e0b'
-    }
+    type: 'dark'
   }
 };
 

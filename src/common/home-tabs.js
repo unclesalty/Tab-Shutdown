@@ -37,15 +37,24 @@ async function saveHomePatterns(patterns) {
 /**
  * Add a new home tab pattern
  * @param {string} pattern
- * @returns {Promise<string[]>} - Updated patterns array
+ * @returns {Promise<{patterns: string[], added: boolean, error?: string}>} - Updated patterns array, whether it was added, or error
  */
 async function addHomePattern(pattern) {
   const patterns = await getHomePatterns();
-  if (!patterns.includes(pattern)) {
-    patterns.push(pattern);
-    await saveHomePatterns(patterns);
+
+  // Check maximum pattern limit
+  if (patterns.length >= MAX_PATTERNS) {
+    return { patterns, added: false, error: `Maximum of ${MAX_PATTERNS} patterns allowed` };
   }
-  return patterns;
+
+  // Check if pattern already exists
+  if (patterns.includes(pattern)) {
+    return { patterns, added: false };
+  }
+
+  patterns.push(pattern);
+  await saveHomePatterns(patterns);
+  return { patterns, added: true };
 }
 
 /**
@@ -60,17 +69,21 @@ async function removeHomePattern(pattern) {
   return patterns;
 }
 
+// Maximum number of patterns allowed
+const MAX_PATTERNS = 100;
+
 /**
  * Convert a wildcard pattern to a RegExp
  * Supports * as a wildcard that matches any characters
+ * Collapses consecutive wildcards for efficiency (***  becomes single .*)
  * @param {string} pattern
  * @returns {RegExp}
  */
 function patternToRegex(pattern) {
   // Escape special regex characters except *
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-  // Replace * with .* for wildcard matching
-  const regexStr = '^' + escaped.replace(/\*/g, '.*') + '$';
+  // Replace consecutive * with single .* for efficient regex
+  const regexStr = '^' + escaped.replace(/\*+/g, '.*') + '$';
   return new RegExp(regexStr, 'i');
 }
 

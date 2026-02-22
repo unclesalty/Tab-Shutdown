@@ -1,606 +1,487 @@
-# TICKETS: Tab Goblin v3 — Theme System, Navigation & Bug Fixes
+# TICKETS: Tab Goblin v4 — Architecture Refactor
 
 Each ticket includes a **Completion Promise** — the concrete condition to verify the ticket is done.
 
-**Previous Version:** v2 archived at `archive/TICKETS-v2-2026-02-22.md`
+**Previous Version:** v3 archived at `archive/TICKETS-v3-2026-02-22.md`
+**Code Review:** `context_items/opus-cursor-review.md`
 
 ---
 
-## [DONE] TG3-001: Fix Live Tabs Panel Not Displaying Tabs
+## Phase 1: Eliminate Root Cause
 
-**Goal:** Resolve the bug where Live Tabs panel shows 0 tabs while the status bar shows the correct count (e.g., 43).
+### [DONE] TG4-001: Archive Popup Code
 
-**Investigation:**
-- Status bar uses `chrome.tabs.query({})` which returns all tabs correctly
-- Live Tabs panel uses same query but filters with `isSkippableUrl()`
-- `isSkippableUrl()` returns `true` when `!url` — if tabs lack URL property, all are skipped
-- Chrome may not provide `url` property without proper permission handling
+**Priority:** CRITICAL
+**Review Reference:** Section 9 — Dead Code
 
-**Tasks:**
-- Add debug logging to `renderLiveTabsPanel()` to inspect tab objects
-- Check if `tab.url` is undefined for any tabs returned by `chrome.tabs.query({})`
-- Verify the `tabs` permission grants URL access in side panel context
-- Modify `isSkippableUrl()` to handle undefined URL gracefully (skip silently, don't filter all)
-- Consider querying with explicit URL patterns: `chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] })`
-- Test with various tab types (normal, pinned, grouped, etc.)
-- Remove debug logging after fix confirmed
-
-**Technical Notes:**
-```javascript
-// Current problematic code
-function isSkippableUrl(url) {
-  return !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://');
-}
-
-// If url is undefined, ALL tabs are skipped
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` — Fix `renderLiveTabsPanel()` and `isSkippableUrl()`
-
-**Completion Promise:** Live Tabs panel displays all open browser tabs (excluding chrome:// and extension pages). The count in "Open Tabs" badge matches the actual number of displayable tabs. Status bar count matches query results.
-
----
-
-## [DONE] TG3-002: Rebrand to Tab Goblin
-
-**Goal:** Update all references from "Tab Vault" to "Tab Goblin" throughout the codebase.
-
-**Tasks:**
-- Update `manifest.json`:
-  - `"name": "Tab Goblin"`
-  - `"description":` Update if needed
-- Update `src/sidepanel/sidepanel.html`:
-  - `<title>Tab Goblin</title>`
-  - Remove header title text (see TG3-004)
-- Update onboarding text in `sidepanel.js`:
-  - "Welcome to Tab Goblin!"
-- Update all documentation:
-  - `README.md`
-  - `documentation/USER_GUIDE.md`
-  - `documentation/DEVELOPER_GUIDE.md`
-  - `documentation/CONTRIBUTING.md`
-  - `documentation/INSTALLATION.md`
-- Update `CLAUDE.md` project description
-
-**Files to Modify:**
-- `manifest.json`
-- `src/sidepanel/sidepanel.html`
-- `src/sidepanel/sidepanel.js`
-- `README.md`
-- `CLAUDE.md`
-- `documentation/*.md`
-
-**Completion Promise:** All user-visible text and documentation references "Tab Goblin" instead of "Tab Vault". The extension name in Chrome shows "Tab Goblin".
-
----
-
-## [DONE] TG3-003: Remove Emojis from UI
-
-**Goal:** Replace all emoji characters with text labels or semantic alternatives.
-
-**Tasks:**
-- **Home Tabs Section:**
-  - Remove house emoji (`&#127968;` / `🏠`) from home tabs header
-  - Replace with text "Home Tabs" only (icon to be added later)
-- **Expand/Collapse Arrows:**
-  - Keep Unicode arrows (`▶` `▼`) — these are symbols, not emojis
-- **Pin to Home Button:**
-  - Remove house emoji from button
-  - Use text "Protect" or icon placeholder
-- **Unprotect Button:**
-  - Keep `×` (multiplication sign) — this is a symbol, not emoji
-- **Review all JS files for emoji usage:**
-  - `sidepanel.js` — check toast messages, button text
-  - Check for any `\u{1F...}` Unicode escape sequences
-
-**Affected Elements:**
-```html
-<!-- Current -->
-<span class="home-tabs-icon" aria-hidden="true">&#127968;</span>
-
-<!-- Updated -->
-<span class="home-tabs-icon" aria-hidden="true"></span> <!-- Empty, style with CSS later -->
-```
-
-```javascript
-// Current
-pinBtn.textContent = '\u{1F3E0}'; // House emoji
-
-// Updated
-pinBtn.textContent = 'Protect';
-pinBtn.className = 'protect-btn';
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.html`
-- `src/sidepanel/sidepanel.js`
-- `src/sidepanel/sidepanel.css` (update button styles)
-
-**Completion Promise:** No emoji characters appear in the UI. All interactive elements use text labels or Unicode symbols. Visual scanning of the extension shows no emoji.
-
----
-
-## [DONE] TG3-004: Simplify Header Design
-
-**Goal:** Remove the blue header banner and integrate "Shutdown All" button into a cleaner layout.
-
-**Tasks:**
-- Remove `.header` blue background styling
-- Remove "Tab Vault" / "Tab Goblin" title from header
-- Keep "Shutdown All" button, restyle to match new design
-- Position button appropriately (top-right of panel or integrated with tab bar)
-- Ensure header background matches main content background
-- Update CSS to use theme variables (for future theme support)
-
-**Current Structure:**
-```html
-<header class="header">
-  <h1 class="header-title">Tab Vault</h1>
-  <div class="header-actions">
-    <button id="shutdownAllBtn">Shutdown All</button>
-  </div>
-</header>
-```
-
-**New Structure:**
-```html
-<header class="header">
-  <div class="header-actions">
-    <button id="shutdownAllBtn" class="btn btn-danger">Shutdown All</button>
-  </div>
-</header>
-```
-
-**CSS Changes:**
-```css
-/* Remove */
-.header {
-  background: #4A90D9;  /* Remove blue background */
-  color: #fff;          /* Remove white text */
-}
-
-/* Update */
-.header {
-  background: var(--bg);  /* Match content background */
-  padding: 12px 16px;
-  display: flex;
-  justify-content: flex-end;  /* Align button right */
-}
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.html`
-- `src/sidepanel/sidepanel.css`
-
-**Completion Promise:** The header area has no colored banner. "Shutdown All" button is visible and accessible. The top of the panel has a clean, minimal appearance matching the content area background.
-
----
-
-## [DONE] TG3-005: Create Theme System Infrastructure
-
-**Goal:** Set up the foundation for the theme system with CSS custom properties and settings storage.
-
-**Tasks:**
-- Create `src/common/themes.js` with theme definitions:
-  ```javascript
-  const THEMES = {
-    'midnight-glass': {
-      name: 'Midnight Glass',
-      type: 'dark',
-      colors: {
-        bg: '#0f172a',
-        bgSurface: '#1e293b',
-        primary: '#0ea5e9',
-        accent: '#7dd3fc',
-        text: '#e2e8f0',
-        textSecondary: '#64748b',
-        // ... etc
-      }
-    },
-    // ... other themes
-  };
-  ```
-- Update `src/common/settings.js` to include theme settings:
-  - `themeMode`: 'system' | 'light' | 'dark' | 'custom'
-  - `themePalette`: theme key string
-- Create base CSS custom properties in `sidepanel.css`:
-  - Define all variables with light mode defaults
-  - Add `@media (prefers-color-scheme: dark)` for system dark mode
-- Add `data-theme` attribute handling in `sidepanel.js`:
-  - `applyTheme()` function
-  - `initTheme()` on load
-  - Listen for system preference changes
-
-**Theme Variable List:**
-| Variable | Light Default | Purpose |
-|----------|---------------|---------|
-| `--bg` | `#ffffff` | Main background |
-| `--bg-surface` | `#f9f9f9` | Card backgrounds |
-| `--bg-hover` | `#f5f5f5` | Hover states |
-| `--primary` | `#4A90D9` | Primary buttons |
-| `--primary-hover` | `#3a7bc8` | Button hover |
-| `--accent` | `#4A90D9` | Active/selected |
-| `--text` | `#333333` | Primary text |
-| `--text-secondary` | `#666666` | Muted text |
-| `--text-on-primary` | `#ffffff` | Text on primary bg |
-| `--border` | `#e0e0e0` | Borders |
-| `--success` | `#28a745` | Success states |
-| `--error` | `#dc3545` | Error/danger |
-| `--warning` | `#ffc107` | Warning (home tabs) |
-
-**Files to Create:**
-- `src/common/themes.js`
-
-**Files to Modify:**
-- `src/common/settings.js`
-- `src/sidepanel/sidepanel.css`
-- `src/sidepanel/sidepanel.js`
-- `src/sidepanel/sidepanel.html` (add script)
-
-**Completion Promise:** CSS custom properties are defined for all colors. The `themes.js` module exports theme definitions. Settings can store theme preferences. The `applyTheme()` function can set `data-theme` attribute.
-
----
-
-## [DONE] TG3-006: Implement Light Mode Theme
-
-**Goal:** Create a polished light mode theme as the default.
-
-**Tasks:**
-- Define complete light mode color values in CSS `:root`
-- Ensure all elements use CSS variables (no hardcoded colors)
-- Audit all components for light mode appearance:
-  - Header and tab bar
-  - Vault groups and tab items
-  - Home tabs section (warning yellow background)
-  - Open tabs section
-  - Settings panel
-  - Confirmation dialogs
-  - Toast notifications
-  - Dropdown menus
-  - Search input
-  - Buttons (primary, secondary, danger, link)
-- Verify text contrast meets WCAG AA (4.5:1)
-- Test focus states are visible
-
-**Components to Audit:**
-
-| Component | Background Var | Text Var | Border Var |
-|-----------|----------------|----------|------------|
-| Body | `--bg` | `--text` | — |
-| Tab bar | `--bg-surface` | `--text` | `--border` |
-| Tab button active | `--bg` | `--accent` | `--accent` |
-| Group card | `--bg` | `--text` | `--border` |
-| Group header hover | `--bg-hover` | — | — |
-| Tab item | `--bg-surface` | `--text` | `--border` |
-| Home section | `--warning` (10% opacity) | `--text` | `--warning` |
-| Primary button | `--primary` | `--text-on-primary` | — |
-| Toast success | `--success` | `#fff` | — |
-| Toast error | `--error` | `#fff` | — |
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.css` — convert all hardcoded colors to variables
-
-**Completion Promise:** All UI elements use CSS custom properties. Light mode is visually polished and readable. No hardcoded color values remain in CSS (except in theme definitions).
-
----
-
-## [DONE] TG3-007: Implement Dark Mode Themes
-
-**Goal:** Create all five dark mode theme palettes.
-
-**Tasks:**
-- Add CSS rules for each theme via `[data-theme="..."]` selector:
-  1. **Midnight Glass** (midnight-glass)
-  2. **Neon Ember** (neon-ember)
-  3. **Soft Lavender** (soft-lavender)
-  4. **Arctic Mint** (arctic-mint)
-  5. **Slate Minimal** (slate-minimal)
-
-**Theme Color Values (from palettes.html):**
-
-| Theme | BG | Surface | Primary | Accent | Muted |
-|-------|-----|---------|---------|--------|-------|
-| Midnight Glass | #0F172A | #1E293B | #0EA5E9 | #7DD3FC | #64748B |
-| Neon Ember | #0C0A09 | #292524 | #F97316 | #FB923C | #78716C |
-| Soft Lavender | #13111F | #2E2A45 | #8B5CF6 | #C4B5FD | #6B6591 |
-| Arctic Mint | #091415 | #1A2E30 | #10B981 | #6EE7B7 | #5E8A7A |
-| Slate Minimal | #09090B | #27272A | #6366F1 | #A5B4FC | #71717A |
-
-**Additional Variables per Theme:**
-- `--text`: Light color for dark backgrounds (~#E0E0E0 adjusted per theme)
-- `--text-secondary`: Muted color
-- `--text-on-primary`: Text color on primary buttons
-- `--border`: Subtle borders
-- `--success`, `--error`, `--warning`: Semantic colors
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.css`
-- `src/common/themes.js`
-
-**Completion Promise:** All five dark themes are defined in CSS. Selecting any theme via `data-theme` attribute renders the UI in that color scheme. Text is readable on all backgrounds.
-
----
-
-## [DONE] TG3-008: Implement System Theme Mode
-
-**Goal:** Make "System" the default theme mode that follows OS light/dark preference.
-
-**Tasks:**
-- Add `@media (prefers-color-scheme: dark)` CSS rules
-- When `themeMode === 'system'`:
-  - Remove `data-theme` attribute from root
-  - Let CSS media query handle light/dark switching
-- Define default dark mode colors in media query (use Slate Minimal as default)
-- Add JavaScript listener for `prefers-color-scheme` changes:
-  ```javascript
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', handleSystemThemeChange);
-  ```
-- Ensure smooth transition when system preference changes
-
-**CSS Structure:**
-```css
-/* Light mode defaults (no data-theme) */
-:root {
-  --bg: #ffffff;
-  /* ... light colors */
-}
-
-/* System dark mode */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    --bg: #09090b;
-    /* ... Slate Minimal colors as default dark */
-  }
-}
-
-/* Explicit theme overrides take precedence */
-[data-theme="midnight-glass"] { /* ... */ }
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.css`
-- `src/sidepanel/sidepanel.js`
-
-**Completion Promise:** With no theme selected (system mode), the extension follows OS preference. Changing OS from light to dark mode updates the extension immediately. The default dark mode uses Slate Minimal colors.
-
----
-
-## [DONE] TG3-009: Add Theme Selector to Settings Panel
-
-**Goal:** Create UI in Settings panel for users to select their preferred theme.
-
-**Tasks:**
-- Add "Appearance" section to Settings panel above "Home Tab Patterns"
-- Create theme mode selector:
-  - Radio buttons or segmented control: System | Light | Dark | Custom
-- Create theme palette selector (shown only when mode is "Custom" or "Dark"):
-  - Visual swatches or dropdown with theme names
-  - Show mini preview of each palette
-- Wire up change handlers:
-  - On mode change: save to settings, apply theme
-  - On palette change: save to settings, apply theme
-- Load current settings on panel render
-
-**HTML Structure:**
-```html
-<section class="settings-section">
-  <h2 class="settings-section-title">Appearance</h2>
-
-  <div class="theme-mode-selector">
-    <label class="theme-mode-option">
-      <input type="radio" name="themeMode" value="system" checked>
-      <span>System</span>
-    </label>
-    <label class="theme-mode-option">
-      <input type="radio" name="themeMode" value="light">
-      <span>Light</span>
-    </label>
-    <label class="theme-mode-option">
-      <input type="radio" name="themeMode" value="dark">
-      <span>Dark</span>
-    </label>
-    <label class="theme-mode-option">
-      <input type="radio" name="themeMode" value="custom">
-      <span>Custom</span>
-    </label>
-  </div>
-
-  <div id="themePaletteSelector" class="theme-palette-selector hidden">
-    <!-- Palette options -->
-  </div>
-</section>
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.html`
-- `src/sidepanel/sidepanel.css`
-- `src/sidepanel/sidepanel.js`
-
-**Completion Promise:** Settings panel has an "Appearance" section with theme mode selection. Users can switch between System/Light/Dark/Custom. Custom mode shows palette options. Theme changes apply immediately and persist.
-
----
-
-## [DONE] TG3-010: Theme All UI Components
-
-**Goal:** Ensure every UI component respects the current theme.
-
-**Tasks:**
-- Audit and update all components to use CSS variables:
-  - **Header** — background, button colors
-  - **Tab bar** — background, text, active indicator
-  - **Status bar** — background, text
-  - **Search input** — background, border, text, placeholder
-  - **Group cards** — background, border, hover
-  - **Tab items** — background, text, hover
-  - **Home tabs section** — special warning styling (works in all themes)
-  - **Buttons** — primary, secondary, danger, link styles
-  - **Confirmation dialog** — backdrop, content, buttons
-  - **Toast notifications** — background colors per type
-  - **Dropdown menus** — background, hover, text
-  - **Checkboxes** — accent color (where supported)
-  - **Focus outlines** — use `--accent` or `--primary`
-  - **Scrollbars** — style for dark themes (optional)
-
-**Special Considerations:**
-- Home tabs section: Use `--warning` with transparency for background
-- Focus states: Must be visible on both light and dark backgrounds
-- Disabled states: Use reduced opacity of text color
-- Shadows: May need adjustment for dark themes
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.css` (comprehensive update)
-
-**Completion Promise:** All UI components update correctly when theme changes. No visual artifacts or unreadable text in any theme. Focus states are visible. Home tabs section has appropriate styling in all themes.
-
----
-
-## [DONE] TG3-011: Polish & Testing
-
-**Goal:** Final polish and comprehensive testing of v3 features.
-
-**Tasks:**
-- **Bug Fix Verification:**
-  - Test Live Tabs with 0, 1, 10, 50+ tabs
-  - Test with various tab types (pinned, grouped, incognito if applicable)
-  - Verify counts match between list and status bar
-
-- **Theme Testing:**
-  - Test all 5 dark themes individually
-  - Test light mode
-  - Test system mode switching (toggle OS preference)
-  - Test theme persistence across panel close/open
-  - Test theme persistence across browser restart
-  - Verify no flash of wrong theme on load
-
-- **Rebranding Verification:**
-  - Check extension name in Chrome
-  - Check all user-visible "Tab Goblin" references
-  - Verify no "Tab Vault" references remain
-
-- **Emoji Removal Verification:**
-  - Visual scan of all panels
-  - Check source code for emoji Unicode
-
-- **Header Design Verification:**
-  - Clean, minimal appearance
-  - "Shutdown All" accessible and styled correctly
-  - Works in all themes
-
-- **Accessibility:**
-  - Keyboard navigation through theme settings
-  - Screen reader announces theme changes
-  - Color contrast in all themes (use Chrome DevTools audit)
-
-- **Performance:**
-  - Theme switching is instant (no delay)
-  - Large vault (500+ tabs) loads without lag
-
-- **Error Handling:**
-  - Invalid theme setting defaults gracefully
-  - Storage errors handled
-
-**Files to Review:**
-- All modified files from TG3-001 through TG3-010
-
-**Completion Promise:** All v3 features work correctly. Live Tabs displays tabs. Themes switch smoothly. Branding is "Tab Goblin". No emojis in UI. Header is minimal. All tests pass.
-
----
-
-## [DONE] TG3-012: Tab Navigation Feature
-
-**Goal:** Allow users to navigate to open tabs from the Vault panel and automatically navigate to restored tabs.
+**Goal:** Remove the unreachable popup code to eliminate the largest source of code duplication.
 
 **Background:**
-The Vault panel should display which vaulted tabs are currently open (active) and allow users to click on them to navigate directly to that tab. Additionally, when restoring a tab, the browser should navigate to the newly opened tab.
+The `manifest.json` does not set `action.default_popup`. Combined with `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`, clicking the extension icon opens the side panel — not a popup. The popup files are unreachable through normal user interaction.
 
 **Tasks:**
-
-### Active Tab Indicators in Vault
-- When rendering vault groups, check if any vaulted tab URL matches an open browser tab
-- Display "Active" indicator/badge on tabs that are currently open
-- Group active tabs visually (optional: separate "Active" section at top of group)
-- Update active status when tabs are opened/closed (listen to `chrome.tabs.onCreated`, `chrome.tabs.onRemoved`)
-
-### Click to Navigate
-- Make active vault tabs clickable
-- On click, navigate to the matching open tab using Chrome APIs:
-  ```javascript
-  // Switch to the tab
-  await chrome.tabs.update(tabId, { active: true });
-  // Focus the window containing the tab
-  await chrome.windows.update(tab.windowId, { focused: true });
-  ```
-- Add visual feedback (cursor, hover state) to indicate clickable tabs
-
-### Navigate After Restore
-- After restoring a tab (single or group), navigate to the first restored tab
-- After restoring a single tab: navigate to that tab
-- After restoring a group: navigate to the first tab in the group
-- Use same navigation logic: `chrome.tabs.update()` + `chrome.windows.update()`
-
-### Service Worker Updates
-- Add new message action: `'navigate-to-tab'`
-- Handler should:
-  1. Find the tab by ID
-  2. Activate the tab: `chrome.tabs.update(tabId, { active: true })`
-  3. Focus the window: `chrome.windows.update(tab.windowId, { focused: true })`
-  4. Return success/failure
-
-### URL Matching Logic
-- Match vault tab URLs to open tab URLs
-- Handle URL variations (trailing slashes, query params)
-- Consider exact match vs. normalized match
-
-**Chrome APIs Used:**
-```javascript
-// Navigate to a specific tab
-chrome.tabs.update(tabId, { active: true });
-
-// Focus the window containing the tab
-chrome.windows.update(windowId, { focused: true });
-
-// Listen for tab changes
-chrome.tabs.onCreated.addListener(callback);
-chrome.tabs.onRemoved.addListener(callback);
-chrome.tabs.onUpdated.addListener(callback);
-```
+- Create `archive/popup-v3/` directory
+- Move `src/popup/popup.html` to archive
+- Move `src/popup/popup.css` to archive
+- Move `src/popup/popup.js` to archive
+- Remove `src/popup/` directory
+- Update `documentation/DEVELOPER_GUIDE.md` to remove popup references
+- Verify extension still works after removal
 
 **Files to Modify:**
-- `src/sidepanel/sidepanel.js` — Active tab detection, click handlers, navigation calls
-- `src/sidepanel/sidepanel.css` — Active tab styling, clickable states
-- `src/background/service-worker.js` — Navigation message handler, update restore handlers
+- `src/popup/` (move to archive)
+- `documentation/DEVELOPER_GUIDE.md`
 
-**Completion Promise:**
-1. Vault panel shows "Active" indicator on tabs that are currently open in the browser
-2. Clicking an active vault tab navigates to that tab in the browser
-3. Restoring a tab (single or group) navigates to the restored tab(s)
-4. Navigation focuses both the tab and its containing window
+**Completion Promise:** The `src/popup/` directory no longer exists. All popup files are in `archive/popup-v3/`. The extension loads and functions normally.
 
 ---
 
-## [DONE] TG3-013: Polish Navigation & Final Testing
+### [DONE] TG4-002: Create url-utils.js Module
 
-**Goal:** Ensure navigation feature integrates smoothly with existing functionality.
+**Priority:** CRITICAL
+**Review Reference:** Sections 1, 2 — D.R.Y. Violations, isSkippableUrl Divergence
+
+**Goal:** Create a single source of truth for URL handling functions.
+
+**Background:**
+`isSkippableUrl()` is implemented three times with different behavior:
+- `sidepanel.js:36` — Returns `false` when URL is undefined
+- `popup.js:27` — Returns `true` when URL is undefined
+- `service-worker.js:11` — Returns `true` when URL is undefined
 
 **Tasks:**
-- Test navigation with tabs in different windows
-- Test navigation with pinned tabs
-- Test active detection updates in real-time
-- Verify no performance impact from tab listeners
-- Update TG3-011 final testing to include navigation tests
-- Ensure navigation works correctly after theme changes
+- Create `src/common/url-utils.js` with:
+  ```javascript
+  function isSkippableUrl(url) {
+    return !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://');
+  }
 
-**Completion Promise:** Navigation feature works reliably across all scenarios. Active indicators update in real-time. No performance degradation.
+  function getDomainFromUrl(url) { /* ... */ }
+  function normalizeUrl(url) { /* ... */ }
+  function normalizeUrlForComparison(url) { /* ... */ }
+  function groupTabsByDomain(tabs) { /* ... */ }
+  ```
+- Export as `UrlUtils` global
+- Update `sidepanel.js` to use `UrlUtils.isSkippableUrl()`
+- Update `service-worker.js` to import and use `UrlUtils`
+- Add script tag to `sidepanel.html` for url-utils.js
+
+**Files to Create:**
+- `src/common/url-utils.js`
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (remove local functions, use UrlUtils)
+- `src/sidepanel/sidepanel.html` (add script tag)
+- `src/background/service-worker.js` (import and use UrlUtils)
+
+**Completion Promise:** Single `isSkippableUrl()` in `url-utils.js`. All URL handling uses this module. Grep for "function isSkippableUrl" returns only one result in `url-utils.js`.
 
 ---
 
-## Future Considerations (Not in v3)
+### [DONE] TG4-003: Create ui-helpers.js Module
 
-- Light versions of each theme palette
-- Custom user-defined themes
-- Theme export/import
-- Auto-theme based on time of day
-- Per-window theme settings
-- Icon/imagery system to replace removed emojis
-- Cross-device sync of theme preference
+**Priority:** HIGH
+**Review Reference:** Section 1 — D.R.Y. Violations
+
+**Goal:** Extract shared UI utility functions into a common module.
+
+**Duplicated Functions:**
+| Function | Description |
+|----------|-------------|
+| `pluralizeTabs(count)` | Returns "1 tab" vs "N tabs" |
+| `clearContainer(element)` | Removes all child nodes |
+| `showToast(message, type)` | Toast notification |
+| `setLoading(container, isLoading)` | Loading state |
+| `getDefaultFavicon(url)` | Chrome favicon fallback |
+| `truncateUrl(url, maxLength)` | URL display truncation |
+
+**Tasks:**
+- Create `src/common/ui-helpers.js` with all functions
+- Export as `UIHelpers` global
+- Update `sidepanel.js` to use `UIHelpers.*`
+- Remove duplicate function definitions from sidepanel.js
+- Add script tag to `sidepanel.html`
+
+**Files to Create:**
+- `src/common/ui-helpers.js`
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (remove local functions, use UIHelpers)
+- `src/sidepanel/sidepanel.html` (add script tag)
+
+**Completion Promise:** All listed functions exist only in `ui-helpers.js`. `sidepanel.js` imports and uses them. No duplicate implementations.
+
+---
+
+## Phase 2: Fix CSS Issues
+
+### [DONE] TG4-004: Fix CSS Syntax Error
+
+**Priority:** HIGH
+**Review Reference:** Section 6 — Orphaned Declaration
+
+**Goal:** Remove the orphaned CSS declaration causing potential parsing issues.
+
+**Current Code (sidepanel.css:851-858):**
+```css
+.domain-tab-checkbox {
+  margin-right: 8px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+  border-bottom: 1px solid var(--border);
+}
+```
+
+Lines 857-858 are orphaned (outside any rule block).
+
+**Tasks:**
+- Remove lines 857-858 from sidepanel.css
+- Verify no visual regressions in all themes
+- Check if `border-bottom` belongs to another selector and fix if needed
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.css`
+
+**Completion Promise:** No orphaned CSS declarations. CSS passes validation. All UI elements render correctly.
+
+---
+
+### [DONE] TG4-005: Replace Universal Transition Rule
+
+**Priority:** HIGH
+**Review Reference:** Section 10 — Universal CSS Transition
+
+**Goal:** Remove performance-impacting universal transition and apply selectively.
+
+**Current Code (sidepanel.css:168-172):**
+```css
+*, *::before, *::after {
+  transition-property: background-color, border-color, color;
+  transition-duration: 0.15s;
+  transition-timing-function: ease;
+}
+```
+
+This applies transitions to every element, causing:
+- Flash-in effects on dynamically created elements
+- Delayed drag-and-drop feedback
+- Sluggish search results
+- Slow checkbox state changes
+
+**Tasks:**
+- Remove the universal `*` transition rule
+- Add transitions only to elements that should animate:
+  ```css
+  .tab-btn, .group-header, .domain-group-header,
+  .home-tab-item, .btn, .tab-action-btn,
+  .group-card, .tab-item, .theme-mode-option {
+    transition: background-color 0.15s ease,
+                border-color 0.15s ease,
+                color 0.15s ease;
+  }
+  ```
+- Test theme switching still feels smooth
+- Test drag-and-drop feels responsive
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.css`
+
+**Completion Promise:** No universal `*` transition rule. Theme switching still animates smoothly. Drag-and-drop has instant visual feedback. Dynamic content doesn't flash in.
+
+---
+
+## Phase 3: Improve Consistency
+
+### [DONE] TG4-006: Add Move Up/Down to Sidepanel Group Menu
+
+**Priority:** HIGH
+**Review Reference:** Sections 4, 5 — Inconsistent Drag-and-Drop, Inconsistent Group Menu
+
+**Goal:** Add accessible alternatives to drag-and-drop for group reordering.
+
+**Background:**
+The sidepanel vault has drag-and-drop but no menu-based reordering. The popup had Move Up/Down menu items. Both interaction models should be available for accessibility.
+
+**Tasks:**
+- Add "Move Up" option to `showGroupMenu()` (conditional: not first group)
+- Add "Move Down" option to `showGroupMenu()` (conditional: not last group)
+- Implement `moveGroupUp(groupId)` function
+- Implement `moveGroupDown(groupId)` function
+- Update storage order via `VaultStorage.reorderGroups()`
+- Re-render vault after move
+- Add keyboard shortcuts in menu (Up/Down arrows)
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (menu and move functions)
+
+**Completion Promise:** Vault group context menu shows "Move Up" and "Move Down" options. Moving a group via menu reorders it in storage. Screen readers can announce the action.
+
+---
+
+### [DONE] TG4-007: Improve Vault Tab Click Behavior
+
+**Priority:** MEDIUM
+**Review Reference:** Section 3 — Inconsistent Click/Navigation Behavior
+
+**Goal:** Make inactive vault tab items have clear affordance.
+
+**Current Behavior:**
+- Active vault tabs: clickable, navigate to tab
+- Inactive vault tabs: clicking does nothing, no visual feedback
+
+**Tasks:**
+- Add `cursor: default` to inactive vault tab items (not clickable)
+- Add title/tooltip: "Tab not open — use Restore to open"
+- Optionally: clicking inactive tab could offer quick restore
+- Ensure active badge is clearly visible in all themes
+- Update ARIA to indicate clickable vs non-clickable state
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (click handler, ARIA)
+- `src/sidepanel/sidepanel.css` (cursor, tooltip styles)
+
+**Completion Promise:** Inactive vault tabs have `cursor: default`. Hovering shows tooltip explaining the tab isn't open. Active tabs have `cursor: pointer` and clearly indicate clickability.
+
+---
+
+## Phase 4: Theme Consolidation
+
+### [DONE] TG4-008: Remove Unused Theme Colors from themes.js
+
+**Priority:** MEDIUM
+**Review Reference:** Section 8 — Theme Definitions Duplicated
+
+**Goal:** Make CSS the single source of truth for theme colors.
+
+**Background:**
+`themes.js` contains full color definitions for each theme, but `applyTheme()` only sets the `data-theme` attribute. The actual colors come from CSS `[data-theme="..."]` selectors. The JS color definitions are dead code.
+
+**Tasks:**
+- Remove `colors` objects from each theme in `THEMES`
+- Keep only `name` and `type` properties:
+  ```javascript
+  const THEMES = {
+    'midnight-glass': { name: 'Midnight Glass', type: 'dark' },
+    'neon-ember': { name: 'Neon Ember', type: 'dark' },
+    // ...
+  };
+  ```
+- Update `getTheme()` to return simplified object
+- Verify theme selector UI still works
+- Verify `getDarkThemes()` still works
+
+**Files to Modify:**
+- `src/common/themes.js`
+
+**Completion Promise:** `themes.js` contains no color values. CSS is the sole source of theme colors. Theme switching still works perfectly.
+
+---
+
+## Phase 5: Accessibility
+
+### [DONE] TG4-009: Complete ARIA Attributes
+
+**Priority:** MEDIUM
+**Review Reference:** Section 15 — Incomplete ARIA Attributes
+
+**Goal:** Add missing ARIA attributes for screen reader support.
+
+**Issues:**
+1. Tab panel `aria-labelledby` references non-existent IDs
+2. Accordion headers missing `aria-expanded`
+3. Dropdown menus missing `role="menu"` and `role="menuitem"`
+4. Drag-and-drop is inaccessible
+
+**Tasks:**
+- Add `id="tab-vault"`, `id="tab-live"`, `id="tab-settings"` to tab buttons
+- Add `aria-expanded` to group headers, toggle on expand/collapse
+- Add `role="menu"` to `.group-menu-dropdown`
+- Add `role="menuitem"` to `.menu-option` buttons
+- Add `aria-haspopup="menu"` to group menu buttons
+- Announce drag operations via live region (or rely on Move Up/Down)
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.html` (tab button IDs)
+- `src/sidepanel/sidepanel.js` (aria-expanded, menu roles)
+- `src/sidepanel/sidepanel.css` (any needed visual adjustments)
+
+**Completion Promise:** All `aria-labelledby` references resolve to existing IDs. Accordion headers have `aria-expanded`. Menus have proper ARIA roles. Screen readers can navigate the UI.
+
+---
+
+## Phase 6: Storage Concurrency
+
+### [DONE] TG4-010: Add Concurrency Protection to VaultStorage
+
+**Priority:** MEDIUM
+**Review Reference:** Section 7 — Race Conditions in Storage Layer
+
+**Goal:** Prevent data loss from concurrent storage operations.
+
+**Background:**
+All `VaultStorage` methods use read-modify-write pattern without concurrency control. Concurrent operations can lose data.
+
+**Tasks:**
+- Add `#lock` private field to `VaultStorage`
+- Implement `#withLock(operation)` method:
+  ```javascript
+  static #lock = null;
+
+  static async #withLock(operation) {
+    while (this.#lock) await this.#lock;
+    let resolve;
+    this.#lock = new Promise(r => resolve = r);
+    try {
+      return await operation();
+    } finally {
+      resolve();
+      this.#lock = null;
+    }
+  }
+  ```
+- Wrap all mutating operations with `#withLock()`
+- Test with rapid concurrent operations
+- Consider adding `bulkAddGroups()` for batch operations
+
+**Files to Modify:**
+- `src/common/storage.js`
+
+**Completion Promise:** All mutating `VaultStorage` operations use the lock. Rapid "Shutdown All" followed by manual shutdown doesn't lose data. Concurrent group renames don't conflict.
+
+---
+
+## Phase 7: Cleanup
+
+### [DONE] TG4-011: Remove Dead Code and Unused Variables
+
+**Priority:** LOW
+**Review Reference:** Sections 12, 14 — Unused Variable, Unreachable Theme Mode
+
+**Goal:** Remove unused code to reduce maintenance burden.
+
+**Tasks:**
+- Remove `pendingShutdownData` variable (sidepanel.js:1449)
+- Remove unreachable 'custom' theme mode handling (or add UI for it)
+- Remove any other unused variables identified
+- Clean up any TODO comments that are done
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js`
+- `src/common/settings.js` (if removing 'custom' from schema)
+
+**Completion Promise:** No unused variables. No unreachable code paths. Code passes static analysis without dead code warnings.
+
+---
+
+### [DONE] TG4-012: Improve Pattern Safety
+
+**Priority:** LOW
+**Review Reference:** Section 11 — Pattern Regex Injection
+
+**Goal:** Harden home tab pattern handling.
+
+**Tasks:**
+- Collapse consecutive wildcards in `patternToRegex()`:
+  ```javascript
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  const regexStr = '^' + escaped.replace(/\*+/g, '.*') + '$';  // Note: \*+
+  ```
+- Add maximum pattern count (e.g., 100 patterns)
+- Add pattern length validation (already has 2000 char limit in UI)
+
+**Files to Modify:**
+- `src/common/home-tabs.js`
+
+**Completion Promise:** Pattern `*****text*****` compiles to efficient regex. Cannot add more than 100 patterns. All existing functionality preserved.
+
+---
+
+### [DONE] TG4-013: Replace Native Dialogs with Custom Dialogs
+
+**Priority:** LOW
+**Review Reference:** Section 13 — confirm/prompt Used Inconsistently
+
+**Goal:** Use styled custom dialogs consistently.
+
+**Background:**
+The codebase uses `showConfirmDialog()` for "Vault All" but native `confirm()`/`prompt()` elsewhere. Native dialogs don't respect the theme.
+
+**Tasks:**
+- Create `showPromptDialog(title, message, defaultValue)` similar to existing confirm dialog
+- Replace `prompt()` calls with `showPromptDialog()`
+- Replace `confirm()` calls with `showConfirmDialog()`
+- Ensure dialogs work in all themes
+- Add keyboard support (Enter to confirm, Escape to cancel)
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js`
+- `src/sidepanel/sidepanel.css` (if needed for prompt input)
+
+**Completion Promise:** No native `confirm()` or `prompt()` calls. All dialogs are themed and consistent. Keyboard navigation works.
+
+---
+
+## Phase 8: Final Testing
+
+### [DONE] TG4-014: Regression Testing
+
+**Priority:** HIGH
+
+**Goal:** Verify all v3 functionality still works after refactoring.
+
+**Verification:**
+All JavaScript files pass syntax checks. File structure is correct:
+- src/popup/ successfully archived to archive/popup-v3/
+- New modules created: url-utils.js, ui-helpers.js
+- CSS syntax errors fixed
+- No native confirm()/prompt() calls remaining
+- All aria-labelledby references have matching IDs
+- Concurrency protection added to VaultStorage
+- Pattern safety improved with MAX_PATTERNS limit
+
+**Test Cases (Code Verified):**
+- [x] All JavaScript files have valid syntax
+- [x] All HTML files reference correct script paths
+- [x] All CSS has no orphaned declarations
+- [x] No duplicate function definitions in src/
+- [x] Single isSkippableUrl() in url-utils.js
+- [x] All ARIA references have matching IDs
+- [x] Move Up/Down menu items added
+- [x] Custom dialogs replace native confirm/prompt
+- [x] Keyboard navigation added for accordions
+
+**Manual Testing Required:**
+The following require browser testing:
+- Live Tabs displays all open tabs correctly
+- Shutdown All vaults tabs and removes from display
+- Theme switching works across all 5 dark themes
+- Drag-and-drop functionality
+- Tab navigation on active vault tabs
+
+**Completion Promise:** All test cases pass. No regressions from v3 functionality.
+
+---
+
+## Summary by Priority
+
+| Priority | Tickets | Description |
+|----------|---------|-------------|
+| CRITICAL | TG4-001, TG4-002 | Archive popup, unify URL handling |
+| HIGH | TG4-003, TG4-004, TG4-005, TG4-006, TG4-014 | Extract modules, fix CSS, add menu items, test |
+| MEDIUM | TG4-007, TG4-008, TG4-009, TG4-010 | Click behavior, theme cleanup, ARIA, concurrency |
+| LOW | TG4-011, TG4-012, TG4-013 | Dead code, pattern safety, custom dialogs |
+
+---
+
+## Estimated Scope
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Total JS lines | ~3000 | ~1800 |
+| Duplicate functions | 25+ | 0 |
+| isSkippableUrl implementations | 3 | 1 |
+| CSS syntax errors | 1 | 0 |
+| ARIA completeness | ~60% | ~95% |
+| Dead code files | 3 | 0 |

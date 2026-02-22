@@ -8,7 +8,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-**v3 In Progress** — Theme system, navigation, and bug fixes:
+**v4 In Progress** — Architecture refactor and best practices:
+- Eliminate code duplication (popup.js/sidepanel.js share ~75% logic)
+- Unify `isSkippableUrl()` behavioral divergence
+- Extract shared modules to `src/common/`
+- Remove dead code (popup is unreachable)
+- Fix CSS syntax errors and universal transition rule
+- Add accessibility improvements (ARIA, keyboard alternatives)
+- Implement race condition protection in storage layer
+
+**v3 Complete** (archived):
 - Bug fix: Live Tabs panel not displaying open tabs
 - Rebrand: "Tab Vault" to "Tab Goblin"
 - Remove emojis from UI
@@ -26,10 +35,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Key Documents
 
-- **PRD.md** — Full product requirements for v3
+- **PRD.md** — Full product requirements for v4
 - **TICKETS.md** — Implementation tickets (check for `[DONE]` status)
 - **PROMPT.md** — Ralph Loop instructions (ONLY used with `/ralph-loop` command)
-- **archive/** — Completed v1/v2 iteration documents
+- **context_items/opus-cursor-review.md** — Comprehensive code review (v3 baseline)
+- **archive/** — Completed v1/v2/v3 iteration documents
 - **documentation/** — User guide, developer guide, contributing guide
 
 ## Important: Ralph Loop Usage
@@ -53,17 +63,23 @@ For normal conversation and assistance, ignore PROMPT.md entirely.
 chrome_tab_shutdown/
 ├── manifest.json
 ├── src/
-│   ├── sidepanel/        # Side panel UI
+│   ├── sidepanel/        # Side panel UI (primary interface)
 │   │   ├── sidepanel.html
 │   │   ├── sidepanel.css  # Theme system here
 │   │   └── sidepanel.js
 │   ├── background/       # Service worker
+│   │   └── service-worker.js
 │   ├── common/           # Shared modules
-│   │   ├── storage.js    # Vault storage
-│   │   ├── home-tabs.js  # Home tab patterns
-│   │   ├── settings.js   # User settings
-│   │   └── themes.js     # Theme definitions (v3)
+│   │   ├── storage.js    # Vault storage with VaultStorage class
+│   │   ├── home-tabs.js  # Home tab patterns with HomeTabStorage
+│   │   ├── settings.js   # User settings with Settings class
+│   │   └── themes.js     # Theme definitions and Themes API
+│   ├── popup/            # DEPRECATED: Unreachable (no default_popup in manifest)
+│   │   ├── popup.html    # Archive candidate
+│   │   ├── popup.css     # Archive candidate
+│   │   └── popup.js      # Archive candidate (~75% duplicates sidepanel.js)
 │   └── assets/           # Icons
+├── context_items/        # Code reviews and context documents
 ├── documentation/        # User and developer docs
 ├── archive/              # Completed iteration documents
 ├── images_context_input/ # Reference images (palettes, screenshots)
@@ -154,9 +170,32 @@ chrome.tabs.onUpdated.addListener(callback);
 - **Async/await** — For all Chrome API calls
 - **Error handling** — Try/catch on async operations
 - **Input validation** — Validate message parameters and user input
-- **CSS variables** — All colors via custom properties (v3)
-- **No emojis** — Use text labels or Unicode symbols only (v3)
+- **CSS variables** — All colors via custom properties
+- **No emojis** — Use text labels or Unicode symbols only
 - **No console.log** — Remove debug statements before completion
+- **D.R.Y.** — Extract shared logic to `src/common/` modules
+- **Single source of truth** — One implementation per function across codebase
+
+## Known Architecture Issues (v4 Focus)
+
+See `context_items/opus-cursor-review.md` for full details.
+
+**Critical:**
+- `isSkippableUrl()` has different behavior in sidepanel.js vs popup.js/service-worker.js
+- popup.js (972 lines) duplicates ~75% of sidepanel.js (2019 lines)
+
+**High:**
+- CSS syntax error: orphaned declaration at sidepanel.css:857-858
+- Universal `*` transition rule causes performance issues
+
+**Medium:**
+- Theme colors defined in both themes.js and sidepanel.css (JS colors unused)
+- Race conditions possible in VaultStorage read-modify-write operations
+
+**Recommended Shared Modules (v4):**
+- `src/common/ui-helpers.js` — pluralizeTabs, clearContainer, showToast, setLoading
+- `src/common/url-utils.js` — isSkippableUrl, getDomainFromUrl, normalizeUrl
+- `src/common/vault-ui.js` — createGroupCard, createTabItem (parameterized)
 
 ## Context7 Usage
 

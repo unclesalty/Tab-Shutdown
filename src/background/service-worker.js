@@ -1,16 +1,11 @@
 // Tab Goblin - Background Service Worker
 // Handles shutdown and restore operations
 
-importScripts('../common/storage.js', '../common/home-tabs.js');
+importScripts('../common/storage.js', '../common/home-tabs.js', '../common/url-utils.js');
 
 // Configure side panel to open on extension icon click
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error) => console.error('Error setting side panel behavior:', error));
-
-// Helper: Check if URL should be skipped (chrome:// or extension pages)
-function isSkippableUrl(url) {
-  return !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://');
-}
 
 // Helper: Extract tab data for storage
 function extractTabData(tab) {
@@ -19,15 +14,6 @@ function extractTabData(tab) {
     title: tab.title,
     favIconUrl: tab.favIconUrl || ''
   };
-}
-
-// Helper: Get domain from URL
-function getDomainFromUrl(url) {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return null;
-  }
 }
 
 // Handle extension install/update - preserve vault data
@@ -46,9 +32,9 @@ async function getDomainGroups() {
   const domainMap = new Map();
 
   for (const tab of allTabs) {
-    if (isSkippableUrl(tab.url)) continue;
+    if (UrlUtils.isSkippableUrl(tab.url)) continue;
 
-    const domain = getDomainFromUrl(tab.url);
+    const domain = UrlUtils.getDomainFromUrl(tab.url);
     if (!domain) continue;
 
     if (!domainMap.has(domain)) {
@@ -73,7 +59,7 @@ async function addTabsByDomain(tabs) {
 
   const domainMap = new Map();
   for (const tab of tabs) {
-    const domain = getDomainFromUrl(tab.url);
+    const domain = UrlUtils.getDomainFromUrl(tab.url);
     if (!domain) continue;
 
     if (!domainMap.has(domain)) {
@@ -135,7 +121,7 @@ async function shutdownCurrentTab() {
   try {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    if (!activeTab || isSkippableUrl(activeTab.url)) return;
+    if (!activeTab || UrlUtils.isSkippableUrl(activeTab.url)) return;
 
     const homePatterns = await HomeTabs.getHomePatterns();
     if (HomeTabs.isHomeTabSync(activeTab.url, homePatterns)) return;
@@ -221,30 +207,13 @@ async function navigateToTab(tabId) {
 async function findOpenTabByUrl(url) {
   try {
     const tabs = await chrome.tabs.query({});
-    const matchingTab = tabs.find(tab => normalizeUrl(tab.url) === normalizeUrl(url));
+    const matchingTab = tabs.find(tab => UrlUtils.normalizeUrl(tab.url) === UrlUtils.normalizeUrl(url));
     if (matchingTab) {
       return { success: true, tabId: matchingTab.id, windowId: matchingTab.windowId };
     }
     return { success: false, error: 'Tab not found' };
   } catch (error) {
     return { success: false, error: error.message };
-  }
-}
-
-/**
- * Normalize URL for comparison (remove trailing slashes, normalize protocol)
- * @param {string} url
- * @returns {string}
- */
-function normalizeUrl(url) {
-  if (!url) return '';
-  try {
-    const parsed = new URL(url);
-    // Remove trailing slash from pathname
-    let pathname = parsed.pathname.replace(/\/+$/, '');
-    return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}`;
-  } catch {
-    return url;
   }
 }
 
@@ -306,7 +275,7 @@ async function shutdownAll(groupName, autoGroupByDomain = false) {
 
     const homePatterns = await HomeTabs.getHomePatterns();
     const tabsToVault = allTabs.filter(tab => {
-      if (isSkippableUrl(tab.url)) return false;
+      if (UrlUtils.isSkippableUrl(tab.url)) return false;
       return !HomeTabs.isHomeTabSync(tab.url, homePatterns);
     });
 
@@ -330,17 +299,6 @@ async function shutdownAll(groupName, autoGroupByDomain = false) {
   }
 }
 
-/**
- * Check if a tab's URL matches a domain
- * @param {string} tabUrl - Tab URL to check
- * @param {string} domain - Domain to match
- * @returns {boolean}
- */
-function tabMatchesDomain(tabUrl, domain) {
-  const hostname = getDomainFromUrl(tabUrl);
-  if (!hostname) return false;
-  return hostname === domain || hostname.endsWith('.' + domain);
-}
 
 /**
  * Shutdown all tabs matching a domain
@@ -353,7 +311,7 @@ async function shutdownByDomain(domain, groupName) {
 
     const homePatterns = await HomeTabs.getHomePatterns();
     const tabsToVault = allTabs.filter(tab => {
-      if (!tabMatchesDomain(tab.url, domain)) return false;
+      if (!UrlUtils.tabMatchesDomain(tab.url, domain)) return false;
       return !HomeTabs.isHomeTabSync(tab.url, homePatterns);
     });
 
