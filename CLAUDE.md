@@ -8,36 +8,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-**v1 Complete** — Core functionality implemented:
-- Vault storage and tab management
-- Shutdown operations (all, selected, by domain)
-- Restore and duplicate operations
-- Home tab protection with URL patterns
-- Search across vaulted tabs
-- Group management (rename, delete, reorder)
-- Keyboard shortcuts (Alt+Shift+V, Alt+Shift+A)
-
-**v2 In Progress** — UI/UX improvements:
-- Converting from popup to chrome.sidePanel
+**v2 Complete** — Side panel UI with full feature set:
+- Side panel replaces popup (chrome.sidePanel API)
 - Tab-based navigation (Vault, Live Tabs, Settings)
-- Unified accordion display
-- Drag-and-drop between groups
-- Accessibility improvements
+- Unified accordion display for live tabs by domain
+- Drag-and-drop between vault groups
+- Home tab protection with quick-add/remove
+- Keyboard navigation and accessibility
+- All v1 features preserved
 
 ## Key Documents
 
 - **PRD.md** — Full product requirements and feature specs
-- **TICKETS.md** — Current implementation tickets (v2: TV2-001 to TV2-010)
-- **PROMPT.md** — Ralph Loop instructions for autonomous ticket execution
-- **archive/** — Completed iterations (v1 documents archived here)
+- **TICKETS.md** — Implementation tickets (check for `[DONE]` status)
+- **PROMPT.md** — Ralph Loop instructions (ONLY used with `/ralph-loop` command)
+- **archive/** — Completed iteration documents
 - **documentation/** — User guide, developer guide, contributing guide
 
-## Document Workflow
+## Important: Ralph Loop Usage
 
-1. Before starting a Ralph Loop, ensure `PROMPT.md` and `TICKETS.md` are current.
-2. Ralph Loop processes tickets one at a time per `PROMPT.md` instructions.
-3. Each completed ticket gets `[DONE]` added to its heading in `TICKETS.md`.
-4. When all tickets are done, archive documents with version suffix (e.g., `archive/TICKETS-v1-2026-02-22.md`).
+**DO NOT** read or follow PROMPT.md unless explicitly running a Ralph Loop via the `/ralph-loop` slash command. PROMPT.md contains autonomous execution instructions that should only be triggered intentionally.
+
+For normal conversation and assistance, ignore PROMPT.md entirely.
 
 ## Tech Stack
 

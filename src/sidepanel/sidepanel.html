@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tab Vault</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="sidepanel-container">
+    <!-- Header -->
+    <header class="header" role="banner">
+      <h1 class="header-title">Tab Vault</h1>
+      <div class="header-actions">
+        <button id="shutdownAllBtn" class="btn btn-header" title="Vault all tabs" aria-label="Shutdown and vault all open tabs">
+          Shutdown All
+        </button>
+      </div>
+    </header>
+
+    <!-- Tab Bar Navigation -->
+    <nav class="tab-bar" role="tablist">
+      <button class="tab-btn active" data-tab="vault" role="tab" aria-selected="true" aria-controls="vaultPanel">
+        Vault
+      </button>
+      <button class="tab-btn" data-tab="live" role="tab" aria-selected="false" aria-controls="livePanel">
+        Live Tabs
+      </button>
+      <button class="tab-btn" data-tab="settings" role="tab" aria-selected="false" aria-controls="settingsPanel">
+        Settings
+      </button>
+    </nav>
+
+    <!-- Toast container for notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Confirmation Dialog -->
+    <div id="confirmDialog" class="confirm-dialog hidden">
+      <div class="confirm-dialog-backdrop"></div>
+      <div class="confirm-dialog-content">
+        <h3 class="confirm-dialog-title">Confirm Shutdown All</h3>
+        <div class="confirm-dialog-body">
+          <p id="confirmTabsCount">You are about to vault 0 tabs.</p>
+          <p id="confirmHomeCount" class="confirm-home-info"></p>
+          <label class="confirm-checkbox-label">
+            <input type="checkbox" id="dontShowAgainCheckbox" />
+            Don't show this again (except for 10+ tabs)
+          </label>
+        </div>
+        <div class="confirm-dialog-actions">
+          <button id="confirmCancelBtn" class="btn btn-secondary">Cancel</button>
+          <button id="confirmVaultBtn" class="btn btn-primary">Vault Tabs</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Vault Panel -->
+      <div id="vaultPanel" class="panel" role="tabpanel" aria-labelledby="tab-vault">
+        <div class="search-container">
+          <input type="text" id="searchInput" placeholder="Search vaulted tabs..." />
+        </div>
+        <div id="vaultGroups" class="vault-groups">
+          <p class="empty-state">Your vault is empty. Shutdown some tabs to get started!</p>
+        </div>
+      </div>
+
+      <!-- Live Tabs Panel -->
+      <div id="livePanel" class="panel hidden" role="tabpanel" aria-labelledby="tab-live">
+        <!-- Home Tabs Section -->
+        <section id="homeTabsSection" class="home-tabs-section" aria-labelledby="homeTabsTitle">
+          <button class="home-tabs-header" id="homeTabsHeader" aria-expanded="true" aria-controls="homeTabsList">
+            <span class="home-tabs-icon" aria-hidden="true">&#127968;</span>
+            <span class="home-tabs-title" id="homeTabsTitle">Home Tabs</span>
+            <span class="home-tabs-count" id="homeTabsCount" aria-label="protected tabs">0</span>
+            <span class="home-tabs-expand" aria-hidden="true">&#9660;</span>
+          </button>
+          <div id="homeTabsList" class="home-tabs-list" role="list" aria-label="Protected home tabs"></div>
+          <div class="home-tabs-footer">
+            <button id="editPatternsBtn" class="btn-link">Edit Patterns</button>
+          </div>
+        </section>
+
+        <!-- Open Tabs Section (grouped by domain) -->
+        <div class="open-tabs-section">
+          <div class="open-tabs-header">
+            <span class="open-tabs-title">Open Tabs</span>
+            <span class="open-tabs-count" id="openTabsCount">0</span>
+            <div class="open-tabs-actions">
+              <button id="selectAllBtn" class="btn-link btn-small-link">All</button>
+              <span class="divider">|</span>
+              <button id="deselectAllBtn" class="btn-link btn-small-link">None</button>
+            </div>
+          </div>
+          <div id="domainGroupsList" class="domain-groups-list"></div>
+        </div>
+
+        <div class="live-tabs-footer">
+          <span id="selectedCount">0 selected</span>
+          <button id="vaultSelectedBtn" class="btn btn-primary">Vault Selected</button>
+        </div>
+      </div>
+
+      <!-- Settings Panel -->
+      <div id="settingsPanel" class="panel hidden" role="tabpanel" aria-labelledby="tab-settings">
+        <div class="settings-section">
+          <h2 class="settings-section-title">Home Tab Patterns</h2>
+          <p class="settings-description">Home tabs are protected from shutdown. Add URL patterns to protect specific tabs.</p>
+          <div id="homePatternsContainer" class="home-patterns-container"></div>
+          <div class="add-pattern-form">
+            <input type="text" id="newPatternInput" placeholder="e.g., *://mail.google.com/*" />
+            <button id="addPatternBtn" class="btn btn-secondary btn-small">Add</button>
+          </div>
+          <button id="addCurrentTabBtn" class="btn btn-secondary add-current-btn">Add Current Tab</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Status Bar -->
+    <footer class="status-bar">
+      <span id="liveTabCount">0</span> tabs open
+    </footer>
+  </div>
+
+  <script src="../common/storage.js"></script>
+  <script src="../common/home-tabs.js"></script>
+  <script src="../common/settings.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

@@ -3,6 +3,10 @@
 
 importScripts('../common/storage.js', '../common/home-tabs.js');
 
+// Configure side panel to open on extension icon click
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+  .catch((error) => console.error('Error setting side panel behavior:', error));
+
 // Helper: Check if URL should be skipped (chrome:// or extension pages)
 function isSkippableUrl(url) {
   return !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://');
