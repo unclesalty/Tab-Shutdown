@@ -1,320 +1,252 @@
-# TICKETS: Tab Vault Implementation
+# TICKETS: Tab Vault v2 — Side Panel & UI Improvements
 
-Each ticket includes a **Completion Promise** — the concrete condition Ralph Loop checks to know the ticket is done.
+Each ticket includes a **Completion Promise** — the concrete condition to verify the ticket is done.
 
----
-
-## [DONE] TV-001: Project Scaffolding & Manifest V3 Setup
-
-**Goal:** Create the Chrome extension skeleton with Manifest V3, folder structure, and a loadable (but empty) extension.
-
-**Tasks:**
-- Create `manifest.json` (MV3) with required permissions: `tabs`, `storage`, `activeTab`
-- Create folder structure: `src/`, `src/popup/`, `src/background/`, `src/common/`, `src/assets/`
-- Create empty `src/background/service-worker.js`
-- Create minimal `src/popup/popup.html`, `popup.css`, `popup.js`
-- Add a 16x16 and 48x48 placeholder icon
-
-**Completion Promise:** The extension loads in `chrome://extensions` with no errors, and clicking the icon opens an empty popup.
+**Previous Version:** v1 archived at `archive/TICKETS-v1-2026-02-22.md`
 
 ---
 
-## [DONE] TV-002: Storage Layer — Vault Data Model
+## TV2-001: Convert Popup to Side Panel
 
-**Goal:** Implement the storage module for reading/writing vault data using `chrome.storage.local`.
+**Goal:** Replace the popup interface with a persistent side panel using the chrome.sidePanel API.
 
 **Tasks:**
-- Define vault data schema: `{ groups: [{ id, name, createdAt, tabs: [{ id, url, title, favIconUrl, vaultedAt }] }] }`
-- Create `src/common/storage.js` with functions:
-  - `getVault()` — returns full vault object
-  - `saveVault(vault)` — writes full vault object
-  - `addGroup(name, tabs)` — creates a group with tabs
-  - `removeGroup(groupId)` — deletes a group
-  - `addTabsToGroup(groupId, tabs)` — appends tabs to existing group
-  - `removeTabsFromGroup(groupId, tabIds)` — removes specific tabs
-- All functions are async and handle missing/corrupt data gracefully
+- Add `"sidePanel"` permission to manifest.json
+- Add `"side_panel": { "default_path": "src/sidepanel/sidepanel.html" }` to manifest.json
+- Remove or keep popup as secondary access (decision: remove popup action, use side panel only)
+- Create `src/sidepanel/` folder with sidepanel.html, sidepanel.css, sidepanel.js
+- Migrate popup UI and logic to side panel files
+- Configure `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })` in service worker
+- Adjust CSS for side panel dimensions (taller, narrower than popup)
+- Test side panel opens on extension icon click
 
-**Completion Promise:** Unit-style manual tests in the console confirm: create a group, add tabs, remove tabs, remove group, and data persists after closing/reopening the popup.
+**Technical Notes:**
+- Side panel HTML has access to all Chrome APIs
+- Side panel persists across tab navigation
+- Side panel width is user-adjustable, design should be responsive
+
+**Completion Promise:** Clicking the extension icon opens the Tab Vault UI in Chrome's side panel (not a popup). All existing functionality works in the side panel.
 
 ---
 
-## [DONE] TV-003: Storage Layer — Home Tab Patterns
+## TV2-002: Tab-Based Navigation
 
-**Goal:** Implement storage for home tab URL patterns and a matcher function.
+**Goal:** Replace button-based navigation with a tabbed interface for panel switching.
 
 **Tasks:**
-- Store home tab patterns in `chrome.storage.local` under key `homeTabPatterns`
-- Create `src/common/home-tabs.js` with functions:
-  - `getHomePatterns()` — returns array of pattern strings
-  - `saveHomePatterns(patterns)` — writes pattern array
-  - `addHomePattern(pattern)` — appends a pattern
-  - `removeHomePattern(pattern)` — removes a pattern
-  - `isHomeTab(url)` — returns boolean, matching against all patterns
-- Pattern matching supports `*` wildcards (e.g., `*://mail.google.com/*`)
+- Design tab bar UI with tabs: "Vault", "Live Tabs", "Settings"
+- Remove the "..." button (Shutdown by Domain)
+- Remove "Select Tabs" button — merge into "Live Tabs" panel
+- "Vault" tab shows vaulted groups (current vault view)
+- "Live Tabs" tab shows home group + live browser tabs (see TV2-003)
+- "Settings" tab shows home tab patterns configuration
+- Implement tab switching with visual active state
+- Keep "Shutdown All" as a standalone button in the action area (not a tab)
+- Persist active tab across side panel reopens
 
-**Completion Promise:** `isHomeTab()` correctly matches and rejects URLs against saved patterns, verified via console testing.
+**Completion Promise:** Navigation uses a tab bar with "Vault", "Live Tabs", and "Settings" tabs. The "..." button is removed. Tab selection is visually clear and persists.
 
 ---
 
-## [DONE] TV-004: Background Service Worker — Shutdown Operations
+## TV2-003: Home Group Display & Quick-Add
 
-**Goal:** Implement the shutdown (vault) logic in the background service worker.
+**Goal:** Make the Home Group prominent and easy to manage directly from the Live Tabs view.
 
 **Tasks:**
-- Create `src/background/service-worker.js` with message handlers:
-  - `shutdown-tabs` — receives tab IDs, a group name; vaults tabs and closes them
-  - `shutdown-all` — vaults all tabs except home tabs, assigns to a named group
-  - `shutdown-domain` — vaults all tabs matching a domain
-- Each handler: saves tabs to vault via storage module, then calls `chrome.tabs.remove()`
-- Home tabs are filtered out using `isHomeTab()` before any shutdown
-- Sends response back with count of tabs vaulted
+- **Home Group Section (top of Live Tabs panel):**
+  - Collapsible "Home Tabs" section at the very top
+  - Shows currently protected home tab patterns
+  - Visual distinction (different background color, icon)
+  - Shows which currently open tabs match home patterns (with indicator)
+  - "Edit Patterns" link to Settings panel
+- **Quick-Add to Home:**
+  - Each tab in the live tabs list has a "Pin to Home" button (house icon)
+  - Clicking adds that tab's URL as a home pattern
+  - Visual feedback: tab moves to Home section or shows "Protected" badge
+  - Confirmation toast: "Added to Home Tabs"
+- **Quick-Remove from Home:**
+  - Tabs in the Home section have "Unprotect" button
+  - Removes the matching pattern from storage
+  - Tab moves back to regular list
+- **Clear Visual Hierarchy:**
+  - HOME section (top) — protected tabs, cannot be vaulted
+  - OPEN TABS section (below) — grouped by domain, can be vaulted
 
-**Completion Promise:** Sending a `shutdown-all` message from the popup console correctly closes non-home tabs and they appear in the vault via `getVault()`.
+**Completion Promise:** The Live Tabs panel shows a distinct "Home Tabs" section at the top listing protected tabs. Users can add any tab to Home with one click (house icon). The hierarchy is clear: Home tabs at top, other tabs below.
 
 ---
 
-## [DONE] TV-005: Background Service Worker — Restore Operations
+## TV2-004: Unified Accordion Display for Live Tabs
 
-**Goal:** Implement the restore logic in the background service worker.
+**Goal:** Display live tabs in the same accordion/group style as vaulted tabs for visual consistency.
 
 **Tasks:**
-- Add message handlers to service worker:
-  - `restore-group` — opens all tabs in a group, removes group from vault
-  - `restore-tabs` — opens specific tabs from a group, removes them from vault
-  - `duplicate-group` — opens all tabs in a group WITHOUT removing from vault
-- Uses `chrome.tabs.create()` to open restored tabs
-- Sends response back with count of tabs restored
+- In "Live Tabs" panel (below Home section), group browser tabs by domain
+- Display each domain as a collapsible group card (matching vault group style)
+- Show domain name as group header with tab count
+- Expand to show individual tabs with favicon, title, URL
+- Each tab has:
+  - Checkbox for selection
+  - "Pin to Home" button (house icon)
+- Each domain group has "Vault All" button
+- Selected tabs counter at bottom
+- "Vault Selected" button for selected tabs across groups
+- Auto-group checkbox option when vaulting
 
-**Completion Promise:** Restoring a vaulted group reopens all its tabs and the group is removed from the vault (or preserved if duplicating).
+**Completion Promise:** The "Live Tabs" panel shows browser tabs grouped by domain in expandable accordion cards identical in style to vault groups. Users can vault individual tabs, entire domains, or selected tabs across groups.
 
 ---
 
-## [DONE] TV-006: Popup UI — Layout & Live Tab Info
+## TV2-005: Shutdown All Confirmation Dialog
 
-**Goal:** Build the popup shell with live tab count and basic layout.
+**Goal:** Ensure "Shutdown All" always shows a confirmation before executing.
 
 **Tasks:**
-- Design popup layout in `popup.html`:
-  - Header with extension name and live tab count
-  - Action bar with Shutdown All / Restore buttons
-  - Main area (placeholder for vault group list)
-  - Footer with settings link
-- Style in `popup.css` — clean, compact design suitable for a popup (400px wide, max 500px tall)
-- `popup.js` queries `chrome.tabs.query({})` on load to show live tab count
-- Wire up Shutdown All button to send `shutdown-all` message to service worker
+- Review current Shutdown All flow
+- Ensure confirmation dialog ALWAYS appears (remove "skip" option or make it harder to enable)
+- Confirmation shows: count of tabs to be closed, count of home tabs protected
+- Clear "Confirm" and "Cancel" buttons
+- Consider adding "Don't show again" checkbox (stores preference)
+- If "Don't show again" is checked, still show for 10+ tabs
 
-**Completion Promise:** Popup opens showing correct live tab count, and clicking Shutdown All closes non-home tabs.
+**Completion Promise:** Clicking "Shutdown All" always shows a confirmation dialog with tab counts before executing. Users must explicitly confirm the action.
 
 ---
 
-## [DONE] TV-007: Popup UI — Vault Group List & Restore
+## TV2-006: Prepare Drag-and-Drop Infrastructure
 
-**Goal:** Display vault groups in the popup with restore actions.
+**Goal:** Add the foundational structure for drag-and-drop between groups (without full implementation).
 
 **Tasks:**
-- On popup load, call `getVault()` and render groups as expandable cards
-- Each group card shows: name, tab count, Restore Group button
-- Expanding a group shows individual tabs with title, URL snippet, and individual Restore button
-- Restore Group button sends `restore-group` message and refreshes the list
-- Individual restore sends `restore-tabs` message and refreshes
-- Empty state message when vault is empty
+- Ensure all tab items have consistent structure across Vault and Live Tabs views
+- Add `draggable="true"` attribute to tab items in vault
+- Add `data-group-id` and `data-tab-id` attributes for identification
+- Add placeholder drop zone styling (visual feedback classes)
+- Create stub event handlers: `dragstart`, `dragover`, `drop`, `dragend`
+- Document the planned drag-and-drop behavior in code comments
+- Note: Full drag-and-drop implementation is TV2-007 (next ticket)
 
-**Completion Promise:** Vault groups render in the popup, expanding shows tabs, and restore buttons work correctly.
+**Completion Promise:** Tab items in the vault view have draggable attributes and data attributes. Drop zone CSS classes exist. Stub handlers are in place. Dragging a tab shows visual feedback (even if drop doesn't work yet).
 
 ---
 
-## [DONE] TV-008: Popup UI — Shutdown Selected Tabs
+## TV2-007: Drag-and-Drop Between Groups (Full Implementation)
 
-**Goal:** Let users pick which live tabs to vault instead of shutting down all.
+**Goal:** Allow users to drag tabs between vault groups to reorganize.
 
 **Tasks:**
-- Add a "Shutdown Selected" view/mode to the popup
-- Query and list all live tabs with checkboxes
-- Home tabs are visually marked and unchecked by default (but still selectable)
-- User enters or selects a group name for the vaulted tabs
-- Confirm button sends `shutdown-tabs` message with selected tab IDs
-- Confirmation step shows count of tabs about to be closed
+- Implement `dragstart` to capture tab data
+- Implement `dragover` on group containers to allow drop
+- Visual feedback: highlight valid drop zones
+- Implement `drop` to move tab to new group
+- Update storage when tab moves
+- Handle edge cases: dropping on same group, dropping on empty area
+- Animate the tab move for polish
+- Support moving multiple selected tabs at once (stretch goal)
 
-**Completion Promise:** User can select specific tabs, assign them to a group, confirm, and those tabs are closed and appear in the vault.
+**Completion Promise:** Users can drag a vaulted tab from one group and drop it into another group. The tab moves and the change persists. Visual feedback indicates valid drop targets.
 
 ---
 
-## [DONE] TV-009: Popup UI — Home Tab Management
+## TV2-008: Panel Controls & Actions
 
-**Goal:** Let users view and manage home tab patterns from the popup.
+**Goal:** Each panel has appropriate contextual controls.
 
 **Tasks:**
-- Add a settings/home-tabs section accessible from the popup
-- List current home tab patterns with delete buttons
-- Input field + add button for new patterns
-- "Add current tab" quick button that adds the active tab's URL as a pattern
-- Validate pattern format before saving
-- Changes take effect immediately (no restart needed)
+- **Vault panel:**
+  - Search bar (existing)
+  - Group actions (existing): Restore, Copy, Menu
+  - Add "Clear All" or "Export" option (stretch)
+- **Live Tabs panel:**
+  - Home section with "Edit Patterns" link
+  - "Select All" / "Deselect All" buttons (for non-home tabs)
+  - "Vault Selected" button
+  - Group-level "Vault" buttons
+  - Filter/search for live tabs
+- **Settings panel:**
+  - Pattern list with delete buttons (existing)
+  - Add pattern input (existing)
+  - Add Current Tab button (existing)
+  - Add import/export patterns (stretch)
+- Action bar (above tabs):
+  - "Shutdown All" button (always visible)
+  - Live tab count display (excludes home tabs count)
 
-**Completion Promise:** Users can add/remove home tab patterns from the popup, and shutdown operations immediately respect the changes.
+**Completion Promise:** Each panel (Vault, Live Tabs, Settings) has relevant controls. The action bar with "Shutdown All" is visible on all panels.
 
 ---
 
-## [DONE] TV-010: Search & Filter Vaulted Tabs
+## TV2-009: Responsive Side Panel Layout
 
-**Goal:** Add search functionality across all vaulted tabs.
+**Goal:** Ensure the UI works well at various side panel widths.
 
 **Tasks:**
-- Add a search input at the top of the vault section in the popup
-- Search filters across all groups by tab title and URL (case-insensitive)
-- Results show matching tabs grouped by their vault group
-- Restore button works on search results
-- Clear search returns to normal group view
-- Debounce input (200ms) for smooth filtering
+- Test at narrow width (300px) and wide width (500px+)
+- Ensure text truncates properly with ellipsis
+- Buttons stack or wrap gracefully
+- Tab bar remains usable at all widths
+- Group cards don't break layout
+- Home section looks good at all widths
+- Scrolling works correctly for long lists
+- Action bar stays fixed at top
 
-**Completion Promise:** Typing in the search box filters vaulted tabs across all groups by title/URL, and restore works from search results.
+**Completion Promise:** The side panel UI is usable and visually correct at widths from 300px to 600px. No layout breaks or overflow issues.
 
 ---
 
-## [DONE] TV-011: Keyboard Shortcuts
+## TV2-010: Keyboard Navigation & Accessibility
 
-**Goal:** Add configurable keyboard shortcuts for common actions.
+**Goal:** Ensure the side panel is keyboard accessible.
 
 **Tasks:**
-- Define commands in `manifest.json`:
-  - `shutdown-current-tab` — vault the active tab
-  - `shutdown-all-tabs` — vault all except home tabs
-- Handle `chrome.commands.onCommand` in the service worker
-- Prompt user for group name or use a default ("Quick Vault" + date)
-- Document default shortcuts in popup footer or settings
+- Tab bar is keyboard navigable (arrow keys, enter)
+- Tab items are focusable
+- Buttons have focus styles
+- Screen reader labels for icons (especially "Pin to Home" house icon)
+- Escape key closes dropdown menus
+- Proper heading hierarchy
+- ARIA roles where appropriate
+- Home section is announced properly by screen readers
 
-**Completion Promise:** Keyboard shortcuts trigger shutdown of current tab or all tabs, and vaulted tabs appear in the vault.
+**Completion Promise:** Users can navigate the side panel using only keyboard. Focus is visible and logical. No accessibility errors in Chrome DevTools audit.
 
 ---
 
-## [DONE] TV-012: Polish & Edge Cases
+## TV2-011: Polish & Integration Testing
 
-**Goal:** Handle edge cases, improve UX, and finalize for v1.
+**Goal:** Final polish and full integration test of v2 features.
 
 **Tasks:**
-- Handle `chrome://` and `chrome-extension://` URLs (can't reopen — warn or skip)
-- Handle duplicate tabs in vault (same URL vaulted multiple times is fine)
-- Graceful handling of storage quota limits (warn user)
-- Ensure vault data survives extension updates (`chrome.runtime.onInstalled`)
-- Add favicons to vaulted tab list items where available
-- Add a "Shutdown by domain" option in the popup (group live tabs by domain, one-click vault)
+- Smooth transitions between tabs
+- Consistent spacing and typography
 - Loading states for async operations
-- Error toasts for failed operations
+- Error handling for all operations
+- Test all features end-to-end:
+  - Side panel opens
+  - Tab navigation works
+  - Vault view shows groups
+  - Live tabs view shows Home section + grouped tabs
+  - Adding/removing tabs from Home works
+  - Vaulting works from Live Tabs
+  - Restoring works from Vault
+  - Settings work
+  - Shutdown All with confirmation
+  - Drag-and-drop (if implemented)
+- Remove console.log statements
+- Test data persistence across browser restart
 
-**Completion Promise:** All edge cases listed above are handled, no console errors during normal operation, and the extension feels polished and responsive.
-
----
-
-## [DONE] TV-013: Group Management — Rename & Delete
-
-**Goal:** Allow users to rename and delete vault groups from the popup.
-
-**Tasks:**
-- Add a kebab menu (⋮) or edit icon on each group card
-- Rename option opens an inline edit field
-- Delete option prompts for confirmation, then removes the group
-- Update storage and re-render the group list after changes
-
-**Completion Promise:** Users can rename any vault group and delete groups (with confirmation), changes persist after closing the popup.
-
----
-
-## [DONE] TV-014: Group Reordering
-
-**Goal:** Let users reorder vault groups via drag-and-drop or move buttons.
-
-**Tasks:**
-- Implement drag-and-drop reordering for group cards in the popup
-- Fallback: up/down arrow buttons in the group menu
-- Persist order in storage (add `order` field or maintain array order)
-- Visual feedback during drag
-
-**Completion Promise:** Users can reorder vault groups, and the new order persists across popup reopens.
+**Completion Promise:** All v2 features work together smoothly. No console errors. Extension is polished and ready for use.
 
 ---
 
-## [DONE] TV-015: Auto-Group by Domain
+## Future Considerations (Not in v2)
 
-**Goal:** When vaulting tabs, offer automatic grouping by domain.
+- Sync vault across devices
+- Export/import vault data
+- Chrome tab groups integration
+- Multiple vaults/workspaces
+- Tab preview thumbnails
+- Usage analytics (opt-in)
+- Dark mode support
+- Drag tabs from Live Tabs directly to Vault groups
 
-**Tasks:**
-- Add "Auto-group by domain" option in shutdown flows
-- When selected, create one group per domain (e.g., "github.com", "stackoverflow.com")
-- If a domain group already exists, add tabs to it instead of creating duplicate
-- Works with shutdown-all, shutdown-selected, and shutdown-domain
-
-**Completion Promise:** Selecting auto-group creates or appends to domain-named groups, no duplicate domain groups are created.
-
----
-
-## [DONE] TV-016: Duplicate/Copy Tab to Vault
-
-**Goal:** Allow duplicating tabs (restore without removing from vault).
-
-**Tasks:**
-- Add "Open Copy" button next to individual tabs in vault
-- Add "Open Copy of Group" option for groups
-- These use `duplicate-group` and similar messages (no removal from vault)
-- Visual distinction from regular restore buttons
-
-**Completion Promise:** Users can open copies of vaulted tabs/groups without removing them from the vault.
-
----
-
-## [DONE] TV-017: Confirmation Dialogs
-
-**Goal:** Add confirmation steps before destructive actions.
-
-**Tasks:**
-- Confirm before shutdown-all (show count of tabs to be closed)
-- Confirm before deleting a vault group
-- Confirm before restoring a large group (10+ tabs)
-- Confirmations show clear action description and cancel option
-- Optional "Don't ask again" checkbox stored in settings
-
-**Completion Promise:** Destructive actions show confirmation dialogs, and users can dismiss them or opt out via settings.
-
----
-
-## [DONE] TV-018: Visual Indicators & Favicon Support
-
-**Goal:** Polish the UI with icons and visual cues.
-
-**Tasks:**
-- Display favicons for vaulted tabs (use `favIconUrl` from storage)
-- Fallback icon for tabs without favicons
-- Home tab indicator badge in live tab list (🏠 or similar)
-- Group icons based on dominant domain or custom color
-- Tab count badges on collapsed groups
-
-**Completion Promise:** Vaulted tabs show favicons, home tabs are visually marked, groups have visual indicators.
-
----
-
-## [DONE] TV-019: Empty States & Onboarding
-
-**Goal:** Guide new users and handle empty states gracefully.
-
-**Tasks:**
-- Empty vault state: friendly message + quick-start tip
-- Empty group state (after restoring all tabs): prompt to delete or keep
-- First-run onboarding: brief tooltip tour of key features
-- Store `onboardingComplete` flag to show only once
-
-**Completion Promise:** New users see onboarding tips, empty states have helpful messages, and first-run experience is welcoming.
-
----
-
-## [DONE] TV-020: Final Integration & Smoke Test
-
-**Goal:** Ensure all features work together and the extension is release-ready.
-
-**Tasks:**
-- Full smoke test: shutdown, vault, restore, search, shortcuts, home tabs
-- Verify data persistence across browser restart
-- Check performance with 50+ vaulted tabs
-- Fix any integration bugs found
-- Clean up console logs (remove debug statements)
-- Verify manifest permissions are minimal and correct
-
-**Completion Promise:** Full smoke test passes, no console errors, data persists, and extension performs smoothly with 50+ vaulted tabs.

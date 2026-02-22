@@ -1,27 +1,92 @@
-# PROMPT: Tab Vault — Ralph Loop Instructions
+# PROMPT: Tab Vault v2 — Ralph Loop Instructions
 
 ## Loop Configuration
 
-- **Max Iterations:** 20
-- **Completion Promise:** First_Build_Complete!
+- **Max Iterations:** 15
+- **Completion Promise:** Side_Panel_Complete!
 
 ## Role
 
-You are implementing **Tab Vault**, a Chrome extension. Work through the tickets in `TICKETS.md` sequentially, one at a time.
+You are implementing **Tab Vault v2**, upgrading the Chrome extension from a popup to a side panel with improved UI/UX. Work through the tickets in `TICKETS.md` sequentially, one at a time.
+
+## Context
+
+**v1 is complete.** The extension has working:
+- Vault storage and retrieval
+- Shutdown (vault) operations
+- Restore operations
+- Home tab protection
+- Search functionality
+- Keyboard shortcuts
+- Group management (rename, delete, reorder)
+
+**v2 focuses on:**
+- Converting from popup to chrome.sidePanel
+- Tab-based navigation (Vault, Live Tabs, Settings)
+- Unified accordion display for live tabs
+- Drag-and-drop preparation/implementation
+- Polish and accessibility
 
 ## References
 
-- **PRD.md** — Full product requirements. Read this first to understand the product.
-- **TICKETS.md** — Implementation tickets ordered by dependency. Each has a completion promise.
+- **PRD.md** — Product requirements (still valid)
+- **TICKETS.md** — v2 implementation tickets (TV2-001 to TV2-011)
+- **archive/TICKETS-v1-2026-02-22.md** — Completed v1 tickets
+- **documentation/** — Technical guides and API reference
+
+## Technical Context
+
+### chrome.sidePanel API
+
+The side panel requires:
+
+**manifest.json additions:**
+```json
+{
+  "permissions": ["sidePanel"],
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  }
+}
+```
+
+**Service worker setup:**
+```javascript
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+```
+
+**Key differences from popup:**
+- Side panel persists across tab navigation
+- User can resize panel width (design must be responsive)
+- Side panel has full Chrome API access
+- No fixed height constraint (scrollable)
+
+### File Structure for v2
+
+```
+src/
+├── sidepanel/           # NEW - Side panel UI
+│   ├── sidepanel.html
+│   ├── sidepanel.css
+│   └── sidepanel.js
+├── popup/               # DEPRECATED - Keep for reference, then remove
+├── background/
+│   └── service-worker.js  # Update for sidePanel
+├── common/
+│   ├── storage.js       # No changes expected
+│   ├── home-tabs.js     # No changes expected
+│   └── settings.js      # May add activeTab persistence
+└── assets/
+```
 
 ## Workflow
 
-1. Read `PRD.md` to understand the full product vision.
-2. Read `TICKETS.md` to see all tickets and their completion promises.
-3. Pick the next incomplete ticket (lowest number not yet done).
-4. Implement the ticket fully.
-5. Verify the **Completion Promise** is met. Be honest — if it's not met, keep working.
-6. When the completion promise is satisfied, mark the ticket as done by adding `[DONE]` to its heading in `TICKETS.md` (e.g., `## [DONE] TV-001: Project Scaffolding`).
+1. Read `TICKETS.md` to see all v2 tickets.
+2. Pick the next incomplete ticket (lowest number not done).
+3. Implement the ticket fully.
+4. Use Context7 (`resolve-library-id` and `query-docs`) to look up Chrome Extension APIs when needed.
+5. Verify the **Completion Promise** is met.
+6. Mark the ticket as done: `## [DONE] TV2-001: ...`
 7. Move to the next ticket.
 
 ## Rules
@@ -29,48 +94,52 @@ You are implementing **Tab Vault**, a Chrome extension. Work through the tickets
 - Work on **one ticket at a time**, in order.
 - Do **not** skip ahead or partially implement future tickets.
 - Each ticket's completion promise is the **only** definition of done.
-- If a ticket requires a decision not covered in the PRD, make a reasonable choice and note it in a comment in the code.
-- Keep code simple. No build tools, no bundlers, no frameworks unless a ticket explicitly calls for one. Vanilla HTML/CSS/JS.
+- Use Context7 to look up documentation for Chrome APIs.
+- Keep code simple. Vanilla HTML/CSS/JS. No frameworks.
 - Test your work against the completion promise before marking done.
+- When migrating from popup to sidepanel, preserve all existing functionality.
+
+## Code Quality Standards
+
+- **Safe DOM manipulation** — Never use methods that parse HTML with untrusted content
+- **Async/await** — Use for all Chrome API calls
+- **Error handling** — Wrap operations in try/catch
+- **Input validation** — Validate user input and message parameters
+- **Consistent styling** — Match existing CSS patterns
 
 ## Completion Signal
 
 When all tickets in `TICKETS.md` are marked `[DONE]`, output:
 
 ```
-First_Build_Complete!
+Side_Panel_Complete!
 ```
 
 Then proceed to the **Final Review Phase**.
 
----
-
 ## Final Review Phase
 
-After all tickets are done, run these review steps and address any issues found:
+After all tickets are done:
 
 ### Step 1: Code Simplifier
-Run `/code-simplifier` to simplify and refine the codebase for clarity and maintainability.
-- Apply all recommended simplifications
-- Commit changes if substantial
+Run `/code-simplifier` to refine the codebase.
 
 ### Step 2: Code Review
-Run `/code-review` on the full implementation.
-- Address any code quality issues
-- Fix anti-patterns or bad practices
-- Ensure consistent code style
+Run `/code-review` on the implementation.
 
 ### Step 3: Security Review
-Review for security vulnerabilities:
-- Check for XSS risks in any HTML rendering
-- Verify `chrome.storage` data is validated
-- Ensure no sensitive data leaks
-- Check URL pattern matching is safe
-- Review all `chrome.tabs` API usage
+- Verify safe DOM manipulation
+- Check storage data validation
+- Review all Chrome API usage
 
-### Step 4: Final Verification
-- Run through all completion promises one more time
-- Verify extension loads without errors
-- Confirm all features work end-to-end
+### Step 4: Accessibility Audit
+- Run Chrome DevTools accessibility audit
+- Verify keyboard navigation
+- Check screen reader compatibility
 
-Once all review steps pass, the loop is truly complete.
+### Step 5: Final Verification
+- Test all v2 features end-to-end
+- Verify v1 features still work
+- Confirm side panel responsive at various widths
+
+Once all review steps pass, the loop is complete.

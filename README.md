@@ -1,5 +1,7 @@
 # Tab Vault
 
+**Status:** v1 Complete | v2 In Development
+
 A Chrome extension that fully closes tabs to reclaim RAM/CPU while preserving them in an organized vault for later restoration.
 
 ## The Problem
@@ -23,6 +25,21 @@ Unlike tab suspenders or discarding features, Tab Vault **actually closes tabs**
 - **Restore & Copy** — Restore tabs (removes from vault) or open copies (keeps in vault)
 - **Keyboard Shortcuts** — Quick vault with `Alt+Shift+V` (current tab) or `Alt+Shift+A` (all tabs)
 - **Persistent Storage** — Vault survives browser restarts and extension updates
+
+## Roadmap
+
+### v1 (Complete)
+Core functionality: vault/restore tabs, home tab protection, search, keyboard shortcuts, group management.
+
+### v2 (In Development)
+UI/UX improvements:
+- **Side Panel** — Persistent panel using chrome.sidePanel (replaces popup)
+- **Tab-Based Navigation** — Tabs for Vault, Live Tabs, Settings (replaces buttons)
+- **Unified Display** — Live tabs shown in same accordion style as vault
+- **Drag-and-Drop** — Move tabs between groups
+- **Accessibility** — Keyboard navigation, screen reader support
+
+See [TICKETS.md](TICKETS.md) for detailed implementation plan.
 
 ## Installation
 

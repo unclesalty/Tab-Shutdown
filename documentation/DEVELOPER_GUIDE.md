@@ -5,15 +5,16 @@ Technical documentation for developers working on Tab Vault.
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [Project Structure](#project-structure)
-3. [Core Modules](#core-modules)
-4. [Chrome APIs Used](#chrome-apis-used)
-5. [Data Flow](#data-flow)
-6. [Message Passing](#message-passing)
-7. [Storage Schema](#storage-schema)
-8. [Testing](#testing)
-9. [Debugging](#debugging)
-10. [Common Tasks](#common-tasks)
+2. [v2 Changes: Side Panel](#v2-changes-side-panel)
+3. [Project Structure](#project-structure)
+4. [Core Modules](#core-modules)
+5. [Chrome APIs Used](#chrome-apis-used)
+6. [Data Flow](#data-flow)
+7. [Message Passing](#message-passing)
+8. [Storage Schema](#storage-schema)
+9. [Testing](#testing)
+10. [Debugging](#debugging)
+11. [Common Tasks](#common-tasks)
 
 ---
 
@@ -59,6 +60,81 @@ Tab Vault follows the Chrome Extension Manifest V3 architecture:
 | Storage Module | `src/common/storage.js` | Vault data CRUD |
 | Home Tabs Module | `src/common/home-tabs.js` | URL pattern matching |
 | Settings Module | `src/common/settings.js` | User preferences |
+
+---
+
+## v2 Changes: Side Panel
+
+v2 replaces the popup with a persistent side panel using the `chrome.sidePanel` API.
+
+### Why Side Panel?
+
+- **Persistent** — Stays open while navigating between tabs
+- **More Space** — Taller than popup, better for long lists
+- **Resizable** — Users can adjust width
+- **Drag-and-Drop Ready** — Better UX for reorganizing tabs
+
+### Manifest Changes
+
+```json
+{
+  "permissions": ["sidePanel", "tabs", "storage", "activeTab"],
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  }
+}
+```
+
+### Service Worker Setup
+
+```javascript
+// In service-worker.js
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+```
+
+### New File Structure
+
+```
+src/
+├── sidepanel/           # NEW - Side panel UI (v2)
+│   ├── sidepanel.html
+│   ├── sidepanel.css
+│   └── sidepanel.js
+├── popup/               # DEPRECATED - Removed in v2
+├── background/
+│   └── service-worker.js
+└── common/
+    ├── storage.js
+    ├── home-tabs.js
+    └── settings.js
+```
+
+### Key Differences from Popup
+
+| Aspect | Popup (v1) | Side Panel (v2) |
+|--------|------------|-----------------|
+| Lifecycle | Closes when clicking away | Persists until manually closed |
+| Height | Fixed max (500px) | Full browser height |
+| Width | Fixed (400px) | User-resizable |
+| Navigation | Button-based | Tab-based (Vault, Live Tabs, Settings) |
+| Live Tabs | Separate view | Accordion grouped by domain |
+
+### API Reference
+
+```javascript
+// Open side panel programmatically
+chrome.sidePanel.open({ windowId: tab.windowId });
+
+// Set default behavior
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+
+// Set panel options per tab (optional)
+chrome.sidePanel.setOptions({
+  tabId: tabId,
+  path: 'src/sidepanel/sidepanel.html',
+  enabled: true
+});
+```
 
 ---
 
