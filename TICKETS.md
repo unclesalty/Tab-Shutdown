@@ -1,466 +1,457 @@
-# TICKETS: Tab Goblin v4 — Architecture Refactor
+# TICKETS: Tab Goblin v5 — Bug Fixes and UI Polish
 
 Each ticket includes a **Completion Promise** — the concrete condition to verify the ticket is done.
 
-**Previous Version:** v3 archived at `archive/TICKETS-v3-2026-02-22.md`
-**Code Review:** `context_items/opus-cursor-review.md`
+**Previous Version:** v4 archived at `archive/TICKETS-v4-2026-02-22.md`
+**PRD Reference:** `PRD.md`
 
 ---
 
-## Phase 1: Eliminate Root Cause
+## Phase 1: Home Tab Fixes
 
-### [DONE] TG4-001: Archive Popup Code
+### TG5-001: Fix Home Tab Pattern Cleanup on Removal
 
-**Priority:** CRITICAL
-**Review Reference:** Section 9 — Dead Code
+**Priority:** HIGH
+**PRD Reference:** Section 1.2
 
-**Goal:** Remove the unreachable popup code to eliminate the largest source of code duplication.
+**Goal:** When a home tab is removed from the UI, its pattern should be removed from storage.
 
 **Background:**
-The `manifest.json` does not set `action.default_popup`. Combined with `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })`, clicking the extension icon opens the side panel — not a popup. The popup files are unreachable through normal user interaction.
+When a user adds a URL as a home tab, a pattern is stored in `HomeTabStorage`. When the home tab is removed via the UI, the pattern persists in storage, causing the URL to still match as a home tab.
 
 **Tasks:**
-- Create `archive/popup-v3/` directory
-- Move `src/popup/popup.html` to archive
-- Move `src/popup/popup.css` to archive
-- Move `src/popup/popup.js` to archive
-- Remove `src/popup/` directory
-- Update `documentation/DEVELOPER_GUIDE.md` to remove popup references
-- Verify extension still works after removal
+- Locate the remove home tab handler in `sidepanel.js`
+- Identify where the home tab entry is removed from the UI list
+- Add call to `HomeTabStorage.removePattern(pattern)` when removing the home tab
+- Ensure the pattern being removed matches what was stored (exact URL or pattern string)
+- Test: Add home tab, remove it, close tab — should vault normally
 
 **Files to Modify:**
-- `src/popup/` (move to archive)
-- `documentation/DEVELOPER_GUIDE.md`
+- `src/sidepanel/sidepanel.js` (remove handler)
+- `src/common/home-tabs.js` (verify removePattern exists and works)
 
-**Completion Promise:** The `src/popup/` directory no longer exists. All popup files are in `archive/popup-v3/`. The extension loads and functions normally.
+**Completion Promise:** Removing a home tab from the UI also removes its pattern from storage. A previously protected URL is no longer protected after removal.
 
 ---
 
-### [DONE] TG4-002: Create url-utils.js Module
+### TG5-002: Fix Manual Home Tab Close Handling
 
-**Priority:** CRITICAL
-**Review Reference:** Sections 1, 2 — D.R.Y. Violations, isSkippableUrl Divergence
+**Priority:** HIGH
+**PRD Reference:** Section 1.1
 
-**Goal:** Create a single source of truth for URL handling functions.
+**Goal:** Manually closing a home tab should work normally — close the tab, don't vault it.
 
 **Background:**
-`isSkippableUrl()` is implemented three times with different behavior:
-- `sidepanel.js:36` — Returns `false` when URL is undefined
-- `popup.js:27` — Returns `true` when URL is undefined
-- `service-worker.js:11` — Returns `true` when URL is undefined
+Home tabs are protected from "Vault All" operations. However, manually closing a home tab (clicking X) should close it normally. The tab should not be vaulted because the user explicitly closed it.
 
 **Tasks:**
-- Create `src/common/url-utils.js` with:
-  ```javascript
-  function isSkippableUrl(url) {
-    return !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://');
-  }
-
-  function getDomainFromUrl(url) { /* ... */ }
-  function normalizeUrl(url) { /* ... */ }
-  function normalizeUrlForComparison(url) { /* ... */ }
-  function groupTabsByDomain(tabs) { /* ... */ }
-  ```
-- Export as `UrlUtils` global
-- Update `sidepanel.js` to use `UrlUtils.isSkippableUrl()`
-- Update `service-worker.js` to import and use `UrlUtils`
-- Add script tag to `sidepanel.html` for url-utils.js
-
-**Files to Create:**
-- `src/common/url-utils.js`
+- Review `service-worker.js` tab close handler
+- Verify home tabs are identified correctly
+- Ensure manual close (single tab close) does NOT vault home tabs
+- Ensure "Vault All" still skips home tabs
+- Test: Open home tab, manually close — should close without vaulting
 
 **Files to Modify:**
-- `src/sidepanel/sidepanel.js` (remove local functions, use UrlUtils)
-- `src/sidepanel/sidepanel.html` (add script tag)
-- `src/background/service-worker.js` (import and use UrlUtils)
+- `src/background/service-worker.js` (tab close handler)
 
-**Completion Promise:** Single `isSkippableUrl()` in `url-utils.js`. All URL handling uses this module. Grep for "function isSkippableUrl" returns only one result in `url-utils.js`.
+**Completion Promise:** Manually closing a home tab closes it normally. The tab does not appear in vault. "Vault All" still correctly skips home tabs.
 
 ---
 
-### [DONE] TG4-003: Create ui-helpers.js Module
+## Phase 2: History Behavior Fixes
+
+### TG5-003: Prevent Restored Tabs from Re-entering History
 
 **Priority:** HIGH
-**Review Reference:** Section 1 — D.R.Y. Violations
+**PRD Reference:** Section 2.1
 
-**Goal:** Extract shared UI utility functions into a common module.
-
-**Duplicated Functions:**
-| Function | Description |
-|----------|-------------|
-| `pluralizeTabs(count)` | Returns "1 tab" vs "N tabs" |
-| `clearContainer(element)` | Removes all child nodes |
-| `showToast(message, type)` | Toast notification |
-| `setLoading(container, isLoading)` | Loading state |
-| `getDefaultFavicon(url)` | Chrome favicon fallback |
-| `truncateUrl(url, maxLength)` | URL display truncation |
-
-**Tasks:**
-- Create `src/common/ui-helpers.js` with all functions
-- Export as `UIHelpers` global
-- Update `sidepanel.js` to use `UIHelpers.*`
-- Remove duplicate function definitions from sidepanel.js
-- Add script tag to `sidepanel.html`
-
-**Files to Create:**
-- `src/common/ui-helpers.js`
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (remove local functions, use UIHelpers)
-- `src/sidepanel/sidepanel.html` (add script tag)
-
-**Completion Promise:** All listed functions exist only in `ui-helpers.js`. `sidepanel.js` imports and uses them. No duplicate implementations.
-
----
-
-## Phase 2: Fix CSS Issues
-
-### [DONE] TG4-004: Fix CSS Syntax Error
-
-**Priority:** HIGH
-**Review Reference:** Section 6 — Orphaned Declaration
-
-**Goal:** Remove the orphaned CSS declaration causing potential parsing issues.
-
-**Current Code (sidepanel.css:851-858):**
-```css
-.domain-tab-checkbox {
-  margin-right: 8px;
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-  border-bottom: 1px solid var(--border);
-}
-```
-
-Lines 857-858 are orphaned (outside any rule block).
-
-**Tasks:**
-- Remove lines 857-858 from sidepanel.css
-- Verify no visual regressions in all themes
-- Check if `border-bottom` belongs to another selector and fix if needed
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.css`
-
-**Completion Promise:** No orphaned CSS declarations. CSS passes validation. All UI elements render correctly.
-
----
-
-### [DONE] TG4-005: Replace Universal Transition Rule
-
-**Priority:** HIGH
-**Review Reference:** Section 10 — Universal CSS Transition
-
-**Goal:** Remove performance-impacting universal transition and apply selectively.
-
-**Current Code (sidepanel.css:168-172):**
-```css
-*, *::before, *::after {
-  transition-property: background-color, border-color, color;
-  transition-duration: 0.15s;
-  transition-timing-function: ease;
-}
-```
-
-This applies transitions to every element, causing:
-- Flash-in effects on dynamically created elements
-- Delayed drag-and-drop feedback
-- Sluggish search results
-- Slow checkbox state changes
-
-**Tasks:**
-- Remove the universal `*` transition rule
-- Add transitions only to elements that should animate:
-  ```css
-  .tab-btn, .group-header, .domain-group-header,
-  .home-tab-item, .btn, .tab-action-btn,
-  .group-card, .tab-item, .theme-mode-option {
-    transition: background-color 0.15s ease,
-                border-color 0.15s ease,
-                color 0.15s ease;
-  }
-  ```
-- Test theme switching still feels smooth
-- Test drag-and-drop feels responsive
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.css`
-
-**Completion Promise:** No universal `*` transition rule. Theme switching still animates smoothly. Drag-and-drop has instant visual feedback. Dynamic content doesn't flash in.
-
----
-
-## Phase 3: Improve Consistency
-
-### [DONE] TG4-006: Add Move Up/Down to Sidepanel Group Menu
-
-**Priority:** HIGH
-**Review Reference:** Sections 4, 5 — Inconsistent Drag-and-Drop, Inconsistent Group Menu
-
-**Goal:** Add accessible alternatives to drag-and-drop for group reordering.
+**Goal:** Tabs that match existing vault items should not be added to history when closed.
 
 **Background:**
-The sidepanel vault has drag-and-drop but no menu-based reordering. The popup had Move Up/Down menu items. Both interaction models should be available for accessibility.
+When a vault item is restored, then closed, it re-enters history as a duplicate. This defeats the purpose of the vault — items persist across close/open cycles.
 
 **Tasks:**
-- Add "Move Up" option to `showGroupMenu()` (conditional: not first group)
-- Add "Move Down" option to `showGroupMenu()` (conditional: not last group)
-- Implement `moveGroupUp(groupId)` function
-- Implement `moveGroupDown(groupId)` function
-- Update storage order via `VaultStorage.reorderGroups()`
-- Re-render vault after move
-- Add keyboard shortcuts in menu (Up/Down arrows)
+- In tab close handler, before adding to history:
+  - Get all vault group URLs
+  - Check if closed tab URL exists in any vault group
+  - If match found, skip history addition
+- Consider: Should we match exact URL or normalized URL?
+- Test: Restore vault item, close tab — should NOT appear in history
 
 **Files to Modify:**
-- `src/sidepanel/sidepanel.js` (menu and move functions)
+- `src/background/service-worker.js` (tab close to history logic)
+- `src/common/storage.js` (may need helper: `VaultStorage.hasUrl(url)`)
 
-**Completion Promise:** Vault group context menu shows "Move Up" and "Move Down" options. Moving a group via menu reorders it in storage. Screen readers can announce the action.
+**Completion Promise:** Closing a tab whose URL exists in the vault does NOT add it to history.
 
 ---
 
-### [DONE] TG4-007: Improve Vault Tab Click Behavior
+### TG5-004: Prevent Duplicate History Entries
+
+**Priority:** HIGH
+**PRD Reference:** Section 2.2
+
+**Goal:** The same URL should not appear multiple times in history.
+
+**Background:**
+Users can accumulate multiple history entries for the same URL by repeatedly opening and closing tabs. History should have unique URLs.
+
+**Tasks:**
+- In history add logic, check if URL already exists
+- If exists: Either skip entirely OR update the timestamp/title
+- Decision: Skip (keep original) or Update (show most recent)?
+- Recommendation: Skip — first visit is the "original" bookmark
+- Test: Close same URL twice — should appear only once in history
+
+**Files to Modify:**
+- `src/common/history.js` (add duplicate check)
+- `src/background/service-worker.js` (if history logic is there)
+
+**Completion Promise:** History contains unique URLs only. Closing the same URL multiple times does not create duplicates.
+
+---
+
+### TG5-005: History Collapsed by Default
 
 **Priority:** MEDIUM
-**Review Reference:** Section 3 — Inconsistent Click/Navigation Behavior
+**PRD Reference:** Section 2.3
 
-**Goal:** Make inactive vault tab items have clear affordance.
+**Goal:** History section should be collapsed when first viewing the Vault tab.
 
-**Current Behavior:**
-- Active vault tabs: clickable, navigate to tab
-- Inactive vault tabs: clicking does nothing, no visual feedback
+**Background:**
+History should be unobtrusive — collapsed by default, expanded on demand.
 
 **Tasks:**
-- Add `cursor: default` to inactive vault tab items (not clickable)
-- Add title/tooltip: "Tab not open — use Restore to open"
-- Optionally: clicking inactive tab could offer quick restore
-- Ensure active badge is clearly visible in all themes
-- Update ARIA to indicate clickable vs non-clickable state
+- Find where `expandedVaultGroups` or history section state is initialized
+- Remove history from initial expanded state (if present)
+- Ensure history ID is NOT in expanded set by default
+- Test: Open side panel, go to Vault — history should be collapsed
 
 **Files to Modify:**
-- `src/sidepanel/sidepanel.js` (click handler, ARIA)
-- `src/sidepanel/sidepanel.css` (cursor, tooltip styles)
+- `src/sidepanel/sidepanel.js` (history section render/state)
 
-**Completion Promise:** Inactive vault tabs have `cursor: default`. Hovering shows tooltip explaining the tab isn't open. Active tabs have `cursor: pointer` and clearly indicate clickability.
+**Completion Promise:** History section is collapsed by default on page load and tab switch.
 
 ---
 
-## Phase 4: Theme Consolidation
-
-### [DONE] TG4-008: Remove Unused Theme Colors from themes.js
+### TG5-006: History Position and Accordion Direction
 
 **Priority:** MEDIUM
-**Review Reference:** Section 8 — Theme Definitions Duplicated
+**PRD Reference:** Section 2.4
 
-**Goal:** Make CSS the single source of truth for theme colors.
+**Goal:** History should be at the BOTTOM of the Vault tab and expand UPWARD.
 
 **Background:**
-`themes.js` contains full color definitions for each theme, but `applyTheme()` only sets the `data-theme` attribute. The actual colors come from CSS `[data-theme="..."]` selectors. The JS color definitions are dead code.
+History is supplementary — it should not push vault groups down. Placing it at the bottom with upward expansion keeps focus on vault content.
 
 **Tasks:**
-- Remove `colors` objects from each theme in `THEMES`
-- Keep only `name` and `type` properties:
+- In `renderVaultPanel()` or equivalent, render history AFTER vault groups
+- Apply CSS for upward accordion expansion:
+  - Position history at bottom
+  - When expanded, content should appear above the header
+  - Consider `flex-direction: column-reverse` or absolute positioning
+- Test: Expand history — content should appear above the history header
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (render order)
+- `src/sidepanel/sidepanel.css` (upward expansion styles)
+
+**Completion Promise:** History section is at the bottom of Vault. Expanding it shows content above the header (accordion opens upward).
+
+---
+
+## Phase 3: Vault UI Improvements
+
+### TG5-007: Icon Buttons for Individual Vault Items
+
+**Priority:** MEDIUM
+**PRD Reference:** Section 3.1
+
+**Goal:** Replace text buttons with icon buttons on individual vault items.
+
+**Icons (Unicode, not emoji):**
+- Restore/Open: ↗ (U+2197) — "north east arrow"
+- Copy: ⧉ (U+29C9) — "two joined squares" or ⎘ (U+2398) — "next page"
+- Delete: ✕ (U+2715) — "multiplication x"
+
+**Tasks:**
+- Locate `createVaultTabItem()` or equivalent function
+- Replace text button labels with icons
+- Add `title` attribute for accessibility: `title="Restore"`, `title="Copy"`, `title="Delete"`
+- Add `aria-label` for screen readers
+- Style icons appropriately (size, hover states)
+- Test: Vault items show icons instead of text
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (button creation)
+- `src/sidepanel/sidepanel.css` (icon button styles)
+
+**Completion Promise:** Individual vault items display icon buttons (↗ ⧉ ✕) instead of text. Buttons have accessible labels.
+
+---
+
+### TG5-008: Icon Buttons for Vault Groups
+
+**Priority:** MEDIUM
+**PRD Reference:** Section 3.2
+
+**Goal:** Replace text buttons with icon buttons on vault group headers.
+
+**Icons:**
+- Restore All: ↗ (U+2197)
+- Rename: ✎ (U+270E) — "lower right pencil"
+- Copy All: ⧉ (U+29C9)
+- Delete Group: ✕ (U+2715)
+
+**Tasks:**
+- Locate `createGroupCard()` or equivalent function
+- Replace text button labels with icons
+- Add `title` and `aria-label` attributes
+- Ensure icon buttons fit in group header layout
+- Test: Vault groups show icon buttons
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (group header/menu)
+- `src/sidepanel/sidepanel.css` (icon styles)
+
+**Completion Promise:** Vault group headers display icon buttons. All icons have accessible labels.
+
+---
+
+### TG5-009: Remove Move Up/Down Buttons
+
+**Priority:** LOW
+**PRD Reference:** Section 3.3
+
+**Goal:** Remove Move Up and Move Down buttons from vault group menus.
+
+**Background:**
+v4 added these for accessibility as alternatives to drag-and-drop. However, they add clutter and drag-and-drop is sufficient. Remove them to simplify the UI.
+
+**Tasks:**
+- Locate `showGroupMenu()` or group menu creation
+- Remove "Move Up" and "Move Down" menu options
+- Remove associated handler functions if now unused
+- Test: Group context menu no longer shows move options
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (menu options, move functions)
+
+**Completion Promise:** Vault group menus do not include "Move Up" or "Move Down" options.
+
+---
+
+### TG5-010: Fix Copy Button Behavior
+
+**Priority:** HIGH
+**PRD Reference:** Section 3.4
+
+**Goal:** Copy button should copy URL(s) to clipboard, not open tabs.
+
+**Background:**
+Currently, Copy button behaves identically to Restore — it opens tabs. The expected behavior is to copy the URL (or URLs for a group) to the clipboard.
+
+**Tasks:**
+- Locate copy button handlers for:
+  - Individual vault items
+  - Vault groups (copy all)
+- Replace tab-opening logic with clipboard write:
   ```javascript
-  const THEMES = {
-    'midnight-glass': { name: 'Midnight Glass', type: 'dark' },
-    'neon-ember': { name: 'Neon Ember', type: 'dark' },
-    // ...
-  };
+  // Individual item
+  await navigator.clipboard.writeText(tab.url);
+  showToast('Copied to clipboard');
+
+  // Group (multiple URLs)
+  const urls = group.tabs.map(t => t.url).join('\n');
+  await navigator.clipboard.writeText(urls);
+  showToast(`Copied ${group.tabs.length} URLs`);
   ```
-- Update `getTheme()` to return simplified object
-- Verify theme selector UI still works
-- Verify `getDarkThemes()` still works
+- Add visual feedback (toast notification)
+- Test: Click Copy — URL copied, no tabs opened
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (copy handlers)
+
+**Completion Promise:** Copy button copies URL(s) to clipboard. Toast confirms the action. No tabs are opened.
+
+---
+
+### TG5-011: Fix Drag-and-Drop Visual Update
+
+**Priority:** HIGH
+**PRD Reference:** Section 3.5
+
+**Goal:** After drag-and-drop, UI should update immediately.
+
+**Background:**
+Dragging items between vault sections shows a success alert, but the UI doesn't reflect the change until a refresh or tab switch. The re-render should happen immediately.
+
+**Tasks:**
+- Locate drag-and-drop completion handler
+- After storage update succeeds:
+  - Re-render the vault panel (or affected sections)
+  - Show success feedback AFTER render completes
+- Ensure both source and destination sections update
+- Test: Drag item between groups — UI updates immediately
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (drag handlers, re-render logic)
+
+**Completion Promise:** Dragging items between vault sections updates the UI immediately. Both source and destination reflect the change.
+
+---
+
+## Phase 4: Light Mode Themes
+
+### TG5-012: Add Light Theme Definitions
+
+**Priority:** MEDIUM
+**PRD Reference:** Section 4.1
+
+**Goal:** Add 5 light theme palette definitions to themes.js.
+
+**Theme Definitions:**
+```javascript
+'daylight-glass': { name: 'Daylight Glass', type: 'light' },
+'warm-sand': { name: 'Warm Sand', type: 'light' },
+'morning-lilac': { name: 'Morning Lilac', type: 'light' },
+'spring-mint': { name: 'Spring Mint', type: 'light' },
+'clean-slate': { name: 'Clean Slate', type: 'light' },
+```
+
+**Tasks:**
+- Add 5 light theme entries to `THEMES` object in `themes.js`
+- Add `getLightThemes()` function (mirror of `getDarkThemes()`)
+- Test: `Themes.getLightThemes()` returns 5 light themes
 
 **Files to Modify:**
 - `src/common/themes.js`
 
-**Completion Promise:** `themes.js` contains no color values. CSS is the sole source of theme colors. Theme switching still works perfectly.
+**Completion Promise:** `themes.js` contains 5 light theme definitions. `getLightThemes()` returns them.
 
 ---
 
-## Phase 5: Accessibility
-
-### [DONE] TG4-009: Complete ARIA Attributes
+### TG5-013: Add Light Theme CSS
 
 **Priority:** MEDIUM
-**Review Reference:** Section 15 — Incomplete ARIA Attributes
+**PRD Reference:** Section 4.1
 
-**Goal:** Add missing ARIA attributes for screen reader support.
+**Goal:** Add CSS custom properties for all 5 light themes.
 
-**Issues:**
-1. Tab panel `aria-labelledby` references non-existent IDs
-2. Accordion headers missing `aria-expanded`
-3. Dropdown menus missing `role="menu"` and `role="menuitem"`
-4. Drag-and-drop is inaccessible
+**Color Reference:** `images_context_input/palettes-light.html`
 
 **Tasks:**
-- Add `id="tab-vault"`, `id="tab-live"`, `id="tab-settings"` to tab buttons
-- Add `aria-expanded` to group headers, toggle on expand/collapse
-- Add `role="menu"` to `.group-menu-dropdown`
-- Add `role="menuitem"` to `.menu-option` buttons
-- Add `aria-haspopup="menu"` to group menu buttons
-- Announce drag operations via live region (or rely on Move Up/Down)
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.html` (tab button IDs)
-- `src/sidepanel/sidepanel.js` (aria-expanded, menu roles)
-- `src/sidepanel/sidepanel.css` (any needed visual adjustments)
-
-**Completion Promise:** All `aria-labelledby` references resolve to existing IDs. Accordion headers have `aria-expanded`. Menus have proper ARIA roles. Screen readers can navigate the UI.
-
----
-
-## Phase 6: Storage Concurrency
-
-### [DONE] TG4-010: Add Concurrency Protection to VaultStorage
-
-**Priority:** MEDIUM
-**Review Reference:** Section 7 — Race Conditions in Storage Layer
-
-**Goal:** Prevent data loss from concurrent storage operations.
-
-**Background:**
-All `VaultStorage` methods use read-modify-write pattern without concurrency control. Concurrent operations can lose data.
-
-**Tasks:**
-- Add `#lock` private field to `VaultStorage`
-- Implement `#withLock(operation)` method:
-  ```javascript
-  static #lock = null;
-
-  static async #withLock(operation) {
-    while (this.#lock) await this.#lock;
-    let resolve;
-    this.#lock = new Promise(r => resolve = r);
-    try {
-      return await operation();
-    } finally {
-      resolve();
-      this.#lock = null;
-    }
+- Add CSS blocks for each light theme:
+  ```css
+  [data-theme="daylight-glass"] {
+    --bg: #ffffff;
+    --bg-surface: #e0f2fe;
+    --primary: #0284c7;
+    /* ... full palette */
   }
   ```
-- Wrap all mutating operations with `#withLock()`
-- Test with rapid concurrent operations
-- Consider adding `bulkAddGroups()` for batch operations
+- Copy color values from `palettes-light.html`
+- Match structure of existing dark theme CSS
+- Test: Apply each theme — colors match the palette spec
+
+**Theme Color Mapping (from palettes-light.html):**
+
+| Theme | BG | Surface | Primary | Accent | Muted |
+|-------|----|---------| --------|--------|-------|
+| daylight-glass | #FFFFFF | #E0F2FE | #0284C7 | #0369A1 | #94A3B8 |
+| warm-sand | #FFFFFF | #FFEDD5 | #EA580C | #C2410C | #A8A29E |
+| morning-lilac | #FFFFFF | #EDE9FE | #7C3AED | #6D28D9 | #A1A1AA |
+| spring-mint | #FFFFFF | #D1FAE5 | #059669 | #047857 | #9CA3AF |
+| clean-slate | #FFFFFF | #EEF2FF | #4F46E5 | #4338CA | #A1A1AA |
 
 **Files to Modify:**
-- `src/common/storage.js`
+- `src/sidepanel/sidepanel.css`
 
-**Completion Promise:** All mutating `VaultStorage` operations use the lock. Rapid "Shutdown All" followed by manual shutdown doesn't lose data. Concurrent group renames don't conflict.
+**Completion Promise:** All 5 light themes have CSS custom property definitions. Each theme displays correct colors.
 
 ---
 
-## Phase 7: Cleanup
+### TG5-014: Light Mode Theme Selector UI
 
-### [DONE] TG4-011: Remove Dead Code and Unused Variables
+**Priority:** MEDIUM
+**PRD Reference:** Section 4.2
 
-**Priority:** LOW
-**Review Reference:** Sections 12, 14 — Unused Variable, Unreachable Theme Mode
-
-**Goal:** Remove unused code to reduce maintenance burden.
-
-**Tasks:**
-- Remove `pendingShutdownData` variable (sidepanel.js:1449)
-- Remove unreachable 'custom' theme mode handling (or add UI for it)
-- Remove any other unused variables identified
-- Clean up any TODO comments that are done
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-- `src/common/settings.js` (if removing 'custom' from schema)
-
-**Completion Promise:** No unused variables. No unreachable code paths. Code passes static analysis without dead code warnings.
-
----
-
-### [DONE] TG4-012: Improve Pattern Safety
-
-**Priority:** LOW
-**Review Reference:** Section 11 — Pattern Regex Injection
-
-**Goal:** Harden home tab pattern handling.
-
-**Tasks:**
-- Collapse consecutive wildcards in `patternToRegex()`:
-  ```javascript
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-  const regexStr = '^' + escaped.replace(/\*+/g, '.*') + '$';  // Note: \*+
-  ```
-- Add maximum pattern count (e.g., 100 patterns)
-- Add pattern length validation (already has 2000 char limit in UI)
-
-**Files to Modify:**
-- `src/common/home-tabs.js`
-
-**Completion Promise:** Pattern `*****text*****` compiles to efficient regex. Cannot add more than 100 patterns. All existing functionality preserved.
-
----
-
-### [DONE] TG4-013: Replace Native Dialogs with Custom Dialogs
-
-**Priority:** LOW
-**Review Reference:** Section 13 — confirm/prompt Used Inconsistently
-
-**Goal:** Use styled custom dialogs consistently.
+**Goal:** When Light mode is selected, show theme palette options (same as Dark mode).
 
 **Background:**
-The codebase uses `showConfirmDialog()` for "Vault All" but native `confirm()`/`prompt()` elsewhere. Native dialogs don't respect the theme.
+Currently, selecting Dark mode shows a palette picker; Light mode shows nothing. Reuse the SAME UI component for both.
 
 **Tasks:**
-- Create `showPromptDialog(title, message, defaultValue)` similar to existing confirm dialog
-- Replace `prompt()` calls with `showPromptDialog()`
-- Replace `confirm()` calls with `showConfirmDialog()`
-- Ensure dialogs work in all themes
-- Add keyboard support (Enter to confirm, Escape to cancel)
+- Locate theme mode change handler in `sidepanel.js`
+- When "light" is selected, show palette picker with `Themes.getLightThemes()`
+- When "dark" is selected, show palette picker with `Themes.getDarkThemes()`
+- Reuse the same rendering function for both
+- Save selected light palette to settings
+- Apply selected light palette when light mode is active
+- Test: Switch to Light mode — palette options appear
 
 **Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-- `src/sidepanel/sidepanel.css` (if needed for prompt input)
+- `src/sidepanel/sidepanel.js` (theme mode handler, palette render)
 
-**Completion Promise:** No native `confirm()` or `prompt()` calls. All dialogs are themed and consistent. Keyboard navigation works.
+**Completion Promise:** Selecting Light mode shows 5 light theme palette options. Selecting a light palette applies it. Same UI component as dark mode.
 
 ---
 
-## Phase 8: Final Testing
+## Phase 5: Remove Deprecated UI
 
-### [DONE] TG4-014: Regression Testing
+### TG5-015: Remove Edit Patterns from Live Tabs
+
+**Priority:** LOW
+**PRD Reference:** Section 5.1
+
+**Goal:** Remove the Edit Patterns link and section from Live Tabs panel.
+
+**Background:**
+The Edit Patterns functionality exists on the Settings page. Having it on Live Tabs is redundant and adds clutter. The link only navigates to Settings anyway.
+
+**Tasks:**
+- Locate Edit Patterns section/link in Live Tabs rendering
+- Remove the HTML element creation
+- Remove associated click handlers
+- Remove CSS for removed elements (if specific to this)
+- Test: Live Tabs panel no longer shows Edit Patterns
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (Live Tabs render)
+- `src/sidepanel/sidepanel.css` (cleanup unused styles)
+
+**Completion Promise:** Live Tabs panel does not contain Edit Patterns link or section.
+
+---
+
+## Phase 6: Testing
+
+### TG5-016: Regression Testing
 
 **Priority:** HIGH
 
-**Goal:** Verify all v3 functionality still works after refactoring.
+**Goal:** Verify all existing functionality works after changes.
 
-**Verification:**
-All JavaScript files pass syntax checks. File structure is correct:
-- src/popup/ successfully archived to archive/popup-v3/
-- New modules created: url-utils.js, ui-helpers.js
-- CSS syntax errors fixed
-- No native confirm()/prompt() calls remaining
-- All aria-labelledby references have matching IDs
-- Concurrency protection added to VaultStorage
-- Pattern safety improved with MAX_PATTERNS limit
+**Test Cases:**
+- [ ] Home tab protection still works for "Vault All"
+- [ ] Adding home tabs creates correct patterns
+- [ ] Removing home tabs clears patterns
+- [ ] Manual tab close works for all tab types
+- [ ] History receives tabs that should be there
+- [ ] History does not receive vault matches or duplicates
+- [ ] History accordion works correctly
+- [ ] Vault group creation and deletion works
+- [ ] Vault item restore opens correct tabs
+- [ ] Vault item copy copies to clipboard
+- [ ] Vault group copy copies all URLs
+- [ ] Drag-and-drop between groups works
+- [ ] All 5 dark themes work
+- [ ] All 5 light themes work
+- [ ] Theme switching is smooth
+- [ ] Settings persist across reload
+- [ ] All icon buttons have accessible labels
 
-**Test Cases (Code Verified):**
-- [x] All JavaScript files have valid syntax
-- [x] All HTML files reference correct script paths
-- [x] All CSS has no orphaned declarations
-- [x] No duplicate function definitions in src/
-- [x] Single isSkippableUrl() in url-utils.js
-- [x] All ARIA references have matching IDs
-- [x] Move Up/Down menu items added
-- [x] Custom dialogs replace native confirm/prompt
-- [x] Keyboard navigation added for accordions
-
-**Manual Testing Required:**
-The following require browser testing:
-- Live Tabs displays all open tabs correctly
-- Shutdown All vaults tabs and removes from display
-- Theme switching works across all 5 dark themes
-- Drag-and-drop functionality
-- Tab navigation on active vault tabs
-
-**Completion Promise:** All test cases pass. No regressions from v3 functionality.
+**Completion Promise:** All test cases pass. No regressions from v4.
 
 ---
 
@@ -468,20 +459,38 @@ The following require browser testing:
 
 | Priority | Tickets | Description |
 |----------|---------|-------------|
-| CRITICAL | TG4-001, TG4-002 | Archive popup, unify URL handling |
-| HIGH | TG4-003, TG4-004, TG4-005, TG4-006, TG4-014 | Extract modules, fix CSS, add menu items, test |
-| MEDIUM | TG4-007, TG4-008, TG4-009, TG4-010 | Click behavior, theme cleanup, ARIA, concurrency |
-| LOW | TG4-011, TG4-012, TG4-013 | Dead code, pattern safety, custom dialogs |
+| HIGH | TG5-001, TG5-002, TG5-003, TG5-004, TG5-010, TG5-011, TG5-016 | Home tabs, history dedup, copy fix, drag-drop, testing |
+| MEDIUM | TG5-005, TG5-006, TG5-007, TG5-008, TG5-012, TG5-013, TG5-014 | History UX, icon buttons, light themes |
+| LOW | TG5-009, TG5-015 | Remove move buttons, remove edit patterns |
 
 ---
 
-## Estimated Scope
+## Dependency Graph
 
-| Metric | Before | After |
-|--------|--------|-------|
-| Total JS lines | ~3000 | ~1800 |
-| Duplicate functions | 25+ | 0 |
-| isSkippableUrl implementations | 3 | 1 |
-| CSS syntax errors | 1 | 0 |
-| ARIA completeness | ~60% | ~95% |
-| Dead code files | 3 | 0 |
+```
+TG5-012 (theme defs) → TG5-013 (theme CSS) → TG5-014 (theme UI)
+TG5-003 (vault match) → TG5-004 (duplicates)  [share URL checking logic]
+TG5-007 (item icons) + TG5-008 (group icons)  [can be parallel]
+TG5-010 (copy fix) → TG5-007, TG5-008         [copy is part of icons]
+```
+
+---
+
+## Recommended Order
+
+1. **TG5-010** — Fix copy behavior (high impact)
+2. **TG5-011** — Fix drag-and-drop refresh
+3. **TG5-001** — Home tab pattern cleanup
+4. **TG5-002** — Home tab close handling
+5. **TG5-003** — History vault match check
+6. **TG5-004** — History duplicate prevention
+7. **TG5-005** — History collapsed default
+8. **TG5-006** — History position/direction
+9. **TG5-007** — Individual item icons
+10. **TG5-008** — Group icons
+11. **TG5-009** — Remove move buttons
+12. **TG5-012** — Light theme definitions
+13. **TG5-013** — Light theme CSS
+14. **TG5-014** — Light theme UI
+15. **TG5-015** — Remove edit patterns
+16. **TG5-016** — Final testing

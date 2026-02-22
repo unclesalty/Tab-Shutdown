@@ -32,6 +32,26 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 // Cache of tab info for saving to history when manually closed
 const tabInfoCache = new Map();
 
+// Promise that resolves when cache is initialized
+let cacheInitPromise = null;
+
+// Initialize cache with all existing tabs (needed after service worker restart)
+async function initTabCache() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (tab.url && !UrlUtils.isSkippableUrl(tab.url)) {
+        tabInfoCache.set(tab.id, extractTabData(tab));
+      }
+    }
+  } catch (error) {
+    console.error('Error initializing tab cache:', error);
+  }
+}
+
+// Initialize cache on service worker startup
+cacheInitPromise = initTabCache();
+
 // Keep tab info cached so we can save it when tabs are closed
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (tab.url && !UrlUtils.isSkippableUrl(tab.url)) {
@@ -47,6 +67,11 @@ chrome.tabs.onCreated.addListener((tab) => {
 
 // Listen for tabs being closed - auto-save non-home tabs to history
 chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+  // Ensure cache is initialized before checking
+  if (cacheInitPromise) {
+    await cacheInitPromise;
+  }
+
   const tabInfo = tabInfoCache.get(tabId);
   tabInfoCache.delete(tabId);
 

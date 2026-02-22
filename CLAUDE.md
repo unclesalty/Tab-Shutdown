@@ -8,14 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-**v4 In Progress** — Architecture refactor and best practices:
-- Eliminate code duplication (popup.js/sidepanel.js share ~75% logic)
-- Unify `isSkippableUrl()` behavioral divergence
-- Extract shared modules to `src/common/`
-- Remove dead code (popup is unreachable)
-- Fix CSS syntax errors and universal transition rule
-- Add accessibility improvements (ARIA, keyboard alternatives)
-- Implement race condition protection in storage layer
+**v5 In Progress** — Bug fixes and UI polish:
+- Fix home tab manual close and pattern cleanup on removal
+- Fix history behavior: duplicates, vault match prevention, collapsed default, bottom position
+- Vault UI: icon buttons for items/groups, fix copy behavior (clipboard), fix drag-drop refresh
+- Add 5 light mode theme palettes (matching dark themes)
+- Remove deprecated UI: Move Up/Down buttons, Edit Patterns from Live Tabs
+
+**v4 Complete** (archived):
+- Architecture refactor — popup archived, shared modules extracted
+- Single `isSkippableUrl()` in `url-utils.js`
+- CSS syntax errors fixed, universal transition rule replaced
+- ARIA attributes complete, custom dialogs replace native
+- Storage concurrency protection added
 
 **v3 Complete** (archived):
 - Bug fix: Live Tabs panel not displaying open tabs
@@ -176,26 +181,31 @@ chrome.tabs.onUpdated.addListener(callback);
 - **D.R.Y.** — Extract shared logic to `src/common/` modules
 - **Single source of truth** — One implementation per function across codebase
 
-## Known Architecture Issues (v4 Focus)
+## Known Issues (v5 Focus)
 
-See `context_items/opus-cursor-review.md` for full details.
-
-**Critical:**
-- `isSkippableUrl()` has different behavior in sidepanel.js vs popup.js/service-worker.js
-- popup.js (972 lines) duplicates ~75% of sidepanel.js (2019 lines)
+See `TICKETS.md` for detailed bug tickets.
 
 **High:**
-- CSS syntax error: orphaned declaration at sidepanel.css:857-858
-- Universal `*` transition rule causes performance issues
+- Home tab pattern not removed when home tab is removed from UI
+- Manual home tab close behavior inconsistent
+- Copy button opens tabs instead of copying to clipboard
+- Drag-and-drop shows success but UI doesn't update
+- History contains duplicates and restored tabs
 
 **Medium:**
-- Theme colors defined in both themes.js and sidepanel.css (JS colors unused)
-- Race conditions possible in VaultStorage read-modify-write operations
+- History expanded by default (should be collapsed)
+- History position and accordion direction
+- Vault buttons use text instead of icons
+- Light mode has no theme palette options (dark has 5)
 
-**Recommended Shared Modules (v4):**
+**Low:**
+- Move Up/Down buttons add clutter (remove)
+- Edit Patterns link on Live Tabs redundant (remove)
+
+**Shared Modules (Created in v4):**
 - `src/common/ui-helpers.js` — pluralizeTabs, clearContainer, showToast, setLoading
 - `src/common/url-utils.js` — isSkippableUrl, getDomainFromUrl, normalizeUrl
-- `src/common/vault-ui.js` — createGroupCard, createTabItem (parameterized)
+- `src/common/history.js` — History storage operations
 
 ## Context7 Usage
 
