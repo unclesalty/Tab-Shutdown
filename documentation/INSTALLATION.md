@@ -1,6 +1,6 @@
 # Installation Guide
 
-This guide covers all methods for installing Tab Vault.
+This guide covers all methods for installing Tab Goblin.
 
 ## Requirements
 
@@ -32,14 +32,14 @@ Best for developers or testing the latest version.
    - Click "Select Folder"
 
 5. **Verify installation**
-   - The Tab Vault icon should appear in your toolbar
+   - The Tab Goblin icon should appear in your toolbar
    - Click it to open the popup
 
 ### Updating
 
 When you pull new changes:
 1. Go to `chrome://extensions`
-2. Find Tab Vault
+2. Find Tab Goblin
 3. Click the reload icon (circular arrow)
 
 ## Method 2: Chrome Web Store
@@ -69,10 +69,10 @@ Note: Chrome restricts .crx installations. You may need to:
 
 ### Pin to Toolbar
 
-For easy access, pin Tab Vault to your toolbar:
+For easy access, pin Tab Goblin to your toolbar:
 
 1. Click the puzzle piece icon (Extensions) in Chrome toolbar
-2. Find "Tab Vault"
+2. Find "Tab Goblin"
 3. Click the pin icon
 
 ### Configure Keyboard Shortcuts
@@ -83,7 +83,7 @@ Default shortcuts:
 
 To customize:
 1. Go to `chrome://extensions/shortcuts`
-2. Find "Tab Vault"
+2. Find "Tab Goblin"
 3. Click the pencil icon next to a command
 4. Press your desired key combination
 5. Click OK
@@ -92,7 +92,7 @@ To customize:
 
 Protect important tabs from being vaulted:
 
-1. Click the Tab Vault icon
+1. Click the Tab Goblin icon
 2. Click "Settings" in the footer
 3. Add URL patterns for tabs you want protected
 4. Or navigate to a page and click "Add Current Tab"
@@ -136,13 +136,13 @@ Protect important tabs from being vaulted:
 ### Remove the Extension
 
 1. Go to `chrome://extensions`
-2. Find "Tab Vault"
+2. Find "Tab Goblin"
 3. Click "Remove"
 4. Confirm removal
 
 ### Data Cleanup
 
-Tab Vault stores data in `chrome.storage.local`. When you remove the extension:
+Tab Goblin stores data in `chrome.storage.local`. When you remove the extension:
 - All vault data is automatically deleted
 - Home tab patterns are removed
 - Settings are cleared
@@ -154,14 +154,14 @@ chrome.storage.local.get(null, data => console.log(JSON.stringify(data)));
 
 ## Multiple Profiles
 
-Tab Vault works independently in each Chrome profile:
+Tab Goblin works independently in each Chrome profile:
 - Each profile has its own vault
 - Settings are not shared between profiles
 - Useful for separating work and personal tabs
 
 ## Permissions Explained
 
-Tab Vault requests these permissions:
+Tab Goblin requests these permissions:
 
 | Permission | Why It's Needed |
 |------------|-----------------|
@@ -169,7 +169,7 @@ Tab Vault requests these permissions:
 | `storage` | Save vault data and settings locally |
 | `activeTab` | Access the current tab for "Add Current Tab as Home" feature |
 
-Tab Vault does NOT:
+Tab Goblin does NOT:
 - Access your browsing history
 - Send data to external servers
 - Track your usage

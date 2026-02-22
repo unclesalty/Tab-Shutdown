@@ -1,4 +1,4 @@
-// Tab Vault - Storage Module
+// Tab Goblin - Storage Module
 // Manages vault data persistence using chrome.storage.local
 
 /**

@@ -1,6 +1,6 @@
 # Developer Guide
 
-Technical documentation for developers working on Tab Vault.
+Technical documentation for developers working on Tab Goblin.
 
 ## Table of Contents
 
@@ -20,7 +20,7 @@ Technical documentation for developers working on Tab Vault.
 
 ## Architecture Overview
 
-Tab Vault follows the Chrome Extension Manifest V3 architecture:
+Tab Goblin follows the Chrome Extension Manifest V3 architecture:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -505,7 +505,7 @@ VaultStorage.addGroup('Test Group', [
 ### Service Worker Debugging
 
 1. Go to `chrome://extensions`
-2. Find Tab Vault
+2. Find Tab Goblin
 3. Click "service worker" link
 4. DevTools opens for background script
 

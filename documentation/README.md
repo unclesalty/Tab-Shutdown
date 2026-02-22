@@ -1,10 +1,10 @@
-# Tab Vault Documentation
+# Tab Goblin Documentation
 
-Welcome to the Tab Vault documentation. Choose a guide based on your needs:
+Welcome to the Tab Goblin documentation. Choose a guide based on your needs:
 
 ## For Users
 
-- **[Installation Guide](INSTALLATION.md)** — How to install and set up Tab Vault
+- **[Installation Guide](INSTALLATION.md)** — How to install and set up Tab Goblin
 - **[User Guide](USER_GUIDE.md)** — Complete guide to using all features
 
 ## For Developers
