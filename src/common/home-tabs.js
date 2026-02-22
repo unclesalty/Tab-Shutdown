@@ -2,6 +2,21 @@
 // Manages home tab URL patterns that are protected from shutdown
 
 const HOME_PATTERNS_KEY = 'homeTabPatterns';
+const HOME_INSTANCES_KEY = 'homeTabInstances';
+
+/**
+ * Home tab instance schema:
+ * {
+ *   instances: [
+ *     {
+ *       url: string,
+ *       title: string,
+ *       favIconUrl: string,
+ *       lastSeen: number (timestamp)
+ *     }
+ *   ]
+ * }
+ */
 
 /**
  * Get all home tab patterns from storage
@@ -129,6 +144,94 @@ function isHomeTabSync(url, patterns) {
   return matchesPatterns(url, patterns);
 }
 
+/**
+ * Get all known home tab instances from storage
+ * @returns {Promise<Array>}
+ */
+async function getHomeInstances() {
+  try {
+    const result = await chrome.storage.local.get(HOME_INSTANCES_KEY);
+    if (result[HOME_INSTANCES_KEY] && Array.isArray(result[HOME_INSTANCES_KEY].instances)) {
+      return result[HOME_INSTANCES_KEY].instances;
+    }
+    return [];
+  } catch (error) {
+    console.error('Error reading home instances:', error);
+    return [];
+  }
+}
+
+/**
+ * Save home tab instances to storage
+ * @param {Array} instances
+ * @returns {Promise<void>}
+ */
+async function saveHomeInstances(instances) {
+  try {
+    await chrome.storage.local.set({ [HOME_INSTANCES_KEY]: { instances } });
+  } catch (error) {
+    console.error('Error saving home instances:', error);
+    throw error;
+  }
+}
+
+/**
+ * Add or update a home tab instance (called when a matching tab is seen)
+ * @param {Object} tabInfo - { url, title, favIconUrl }
+ * @returns {Promise<void>}
+ */
+async function trackHomeInstance(tabInfo) {
+  if (!tabInfo.url) return;
+
+  const instances = await getHomeInstances();
+  const existingIndex = instances.findIndex(i => i.url === tabInfo.url);
+
+  const instanceData = {
+    url: tabInfo.url,
+    title: tabInfo.title || 'Untitled',
+    favIconUrl: tabInfo.favIconUrl || '',
+    lastSeen: Date.now()
+  };
+
+  if (existingIndex >= 0) {
+    // Update existing instance
+    instances[existingIndex] = instanceData;
+  } else {
+    // Add new instance
+    instances.push(instanceData);
+  }
+
+  await saveHomeInstances(instances);
+}
+
+/**
+ * Remove a home tab instance by URL
+ * @param {string} url
+ * @returns {Promise<void>}
+ */
+async function removeHomeInstance(url) {
+  const instances = await getHomeInstances();
+  const filtered = instances.filter(i => i.url !== url);
+  await saveHomeInstances(filtered);
+}
+
+/**
+ * Clean up instances that no longer match any pattern
+ * @returns {Promise<void>}
+ */
+async function cleanupOrphanedInstances() {
+  const patterns = await getHomePatterns();
+  const instances = await getHomeInstances();
+
+  const validInstances = instances.filter(instance =>
+    matchesPatterns(instance.url, patterns)
+  );
+
+  if (validInstances.length !== instances.length) {
+    await saveHomeInstances(validInstances);
+  }
+}
+
 // Export for use in other modules
 const HomeTabs = {
   getHomePatterns,
@@ -137,7 +240,12 @@ const HomeTabs = {
   removeHomePattern,
   isHomeTab,
   isHomeTabSync,
-  patternToRegex
+  patternToRegex,
+  getHomeInstances,
+  saveHomeInstances,
+  trackHomeInstance,
+  removeHomeInstance,
+  cleanupOrphanedInstances
 };
 
 // Make available globally for both window (popup) and service worker contexts

@@ -709,6 +709,36 @@ body {
   color: var(--text-secondary);
 }
 
+/* Home tab status indicator */
+.home-tab-status {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  margin-left: auto;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+.home-tab-status.status-active {
+  background: var(--success);
+  color: var(--bg);
+}
+
+.home-tab-status.status-closed {
+  background: var(--text-secondary);
+  color: var(--bg);
+  opacity: 0.7;
+}
+
+/* Closed home tab item styling */
+.home-tab-item.closed {
+  opacity: 0.8;
+}
+
+.home-tab-item.closed .tab-title {
+  color: var(--text-secondary);
+}
+
 /* Unprotect button */
 .unprotect-btn {
   background: none;
@@ -1504,6 +1534,139 @@ body {
   background: var(--primary);
   margin: 4px 0;
   border-radius: 2px;
+}
+
+/* History Section (Vault Panel) */
+.history-section {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  width: 100%;
+}
+
+.history-section.collapsed .history-list,
+.history-section.collapsed .history-footer,
+.history-section.collapsed .history-empty {
+  display: none;
+}
+
+.history-section.empty .history-list {
+  display: none;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+}
+
+.history-header:hover {
+  background: var(--bg-hover);
+}
+
+.history-icon {
+  font-size: 16px;
+  margin-right: 8px;
+}
+
+.history-icon::before {
+  content: '\231B'; /* Hourglass */
+}
+
+.history-title {
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+
+.history-count {
+  font-size: 12px;
+  background: var(--warning);
+  color: var(--bg);
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-right: 8px;
+}
+
+.history-expand {
+  font-size: 10px;
+  color: var(--text-secondary);
+  transition: transform 0.2s;
+}
+
+.history-section.collapsed .history-expand {
+  transform: rotate(-90deg);
+}
+
+.history-list {
+  padding: 0;
+  width: 100%;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.history-item:hover {
+  background: var(--bg-hover);
+}
+
+.history-item:last-child {
+  border-bottom: none;
+}
+
+.history-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.history-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-right: 8px;
+  white-space: nowrap;
+}
+
+.history-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.history-expiry-note {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.history-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.btn-danger-link {
+  color: var(--error);
+}
+
+.btn-danger-link:hover {
+  color: var(--error);
+  text-decoration: underline;
 }
 
 /* Utilities */

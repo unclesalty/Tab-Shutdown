@@ -1,7 +1,10 @@
 // Tab Goblin - Background Service Worker
 // Handles shutdown and restore operations
 
-importScripts('../common/storage.js', '../common/home-tabs.js', '../common/url-utils.js');
+importScripts('../common/storage.js', '../common/home-tabs.js', '../common/url-utils.js', '../common/history.js');
+
+// Track tabs being closed by our extension (to distinguish from manual closes)
+const tabsBeingClosedByExtension = new Set();
 
 // Configure side panel to open on extension icon click
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
@@ -25,6 +28,60 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     }
   }
 });
+
+// Cache of tab info for saving to history when manually closed
+const tabInfoCache = new Map();
+
+// Keep tab info cached so we can save it when tabs are closed
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (tab.url && !UrlUtils.isSkippableUrl(tab.url)) {
+    tabInfoCache.set(tabId, extractTabData(tab));
+  }
+});
+
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.url && !UrlUtils.isSkippableUrl(tab.url)) {
+    tabInfoCache.set(tab.id, extractTabData(tab));
+  }
+});
+
+// Listen for tabs being closed - auto-save non-home tabs to history
+chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+  const tabInfo = tabInfoCache.get(tabId);
+  tabInfoCache.delete(tabId);
+
+  // If closed by extension, don't save to history
+  if (tabsBeingClosedByExtension.has(tabId)) {
+    tabsBeingClosedByExtension.delete(tabId);
+    return;
+  }
+
+  // No cached info (might be a chrome:// tab or extension page)
+  if (!tabInfo || !tabInfo.url) {
+    return;
+  }
+
+  // Check if it's a home tab - home tabs don't go to history
+  const homePatterns = await HomeTabs.getHomePatterns();
+  if (HomeTabs.isHomeTabSync(tabInfo.url, homePatterns)) {
+    return;
+  }
+
+  // Save to history
+  await TabHistory.addToHistory(tabInfo);
+});
+
+/**
+ * Close tabs while marking them as extension-closed (won't go to history)
+ * @param {number[]} tabIds - Chrome tab IDs to close
+ */
+async function closeTabsByExtension(tabIds) {
+  // Mark all tabs as being closed by extension
+  for (const tabId of tabIds) {
+    tabsBeingClosedByExtension.add(tabId);
+  }
+  await chrome.tabs.remove(tabIds);
+}
 
 // Get domains for shutdown by domain feature
 async function getDomainGroups() {
@@ -96,7 +153,7 @@ async function shutdownTabsByDomain(tabIds) {
     }
 
     await addTabsByDomain(tabsToVault);
-    await chrome.tabs.remove(tabsToVault.map(t => t.id));
+    await closeTabsByExtension(tabsToVault.map(t => t.id));
 
     return { success: true, count: tabsToVault.length };
   } catch (error) {
@@ -128,7 +185,7 @@ async function shutdownCurrentTab() {
 
     const groupName = `Quick Vault - ${new Date().toLocaleDateString()}`;
     await VaultStorage.addGroup(groupName, [extractTabData(activeTab)]);
-    await chrome.tabs.remove(activeTab.id);
+    await closeTabsByExtension([activeTab.id]);
   } catch (error) {
     console.error('Error in shutdownCurrentTab:', error);
   }
@@ -178,8 +235,95 @@ async function handleMessage(message) {
     case 'find-open-tab-by-url':
       return await findOpenTabByUrl(message.url);
 
+    case 'close-to-history':
+      return await closeTabToHistory(message.tabId);
+
+    case 'get-history':
+      return { success: true, history: await TabHistory.getHistory() };
+
+    case 'restore-from-history':
+      return await restoreFromHistory(message.tabIds);
+
+    case 'remove-from-history':
+      return await removeFromHistoryHandler(message.tabIds);
+
+    case 'clear-history':
+      await TabHistory.clearHistory();
+      return { success: true };
+
     default:
       return { success: false, error: 'Unknown action' };
+  }
+}
+
+/**
+ * Close a tab and save it to history
+ * @param {number} tabId - Chrome tab ID
+ */
+async function closeTabToHistory(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab) {
+      return { success: false, error: 'Tab not found' };
+    }
+
+    // Save to history first
+    await TabHistory.addToHistory(extractTabData(tab));
+
+    // Close the tab (mark as extension-closed so onRemoved doesn't double-save)
+    await closeTabsByExtension([tabId]);
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error in closeTabToHistory:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Restore tabs from history (opens them and removes from history)
+ * @param {string[]} tabIds - History tab IDs to restore
+ */
+async function restoreFromHistory(tabIds) {
+  try {
+    const history = await TabHistory.getHistory();
+    const tabIdSet = new Set(tabIds);
+    const tabsToRestore = history.tabs.filter(t => tabIdSet.has(t.id));
+
+    // Open the tabs
+    let firstTab = null;
+    for (const tab of tabsToRestore) {
+      const newTab = await chrome.tabs.create({ url: tab.url, active: false });
+      if (!firstTab) firstTab = newTab;
+    }
+
+    // Remove from history
+    await TabHistory.removeManyFromHistory(tabIds);
+
+    // Navigate to the first restored tab
+    if (firstTab) {
+      await chrome.tabs.update(firstTab.id, { active: true });
+      await chrome.windows.update(firstTab.windowId, { focused: true });
+    }
+
+    return { success: true, count: tabsToRestore.length };
+  } catch (error) {
+    console.error('Error in restoreFromHistory:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Remove tabs from history without restoring
+ * @param {string[]} tabIds - History tab IDs to remove
+ */
+async function removeFromHistoryHandler(tabIds) {
+  try {
+    const count = await TabHistory.removeManyFromHistory(tabIds);
+    return { success: true, count };
+  } catch (error) {
+    console.error('Error in removeFromHistoryHandler:', error);
+    return { success: false, error: error.message };
   }
 }
 
@@ -255,7 +399,7 @@ async function shutdownTabs(tabIds, groupName) {
 
     const safeName = (groupName || 'Vaulted Tabs').substring(0, 200);
     await VaultStorage.addGroup(safeName, tabsToVault.map(extractTabData));
-    await chrome.tabs.remove(tabsToVault.map(t => t.id));
+    await closeTabsByExtension(tabsToVault.map(t => t.id));
 
     return { success: true, count: tabsToVault.length };
   } catch (error) {
@@ -290,7 +434,7 @@ async function shutdownAll(groupName, autoGroupByDomain = false) {
       await VaultStorage.addGroup(name, tabsToVault.map(extractTabData));
     }
 
-    await chrome.tabs.remove(tabsToVault.map(t => t.id));
+    await closeTabsByExtension(tabsToVault.map(t => t.id));
 
     return { success: true, count: tabsToVault.length };
   } catch (error) {
@@ -320,7 +464,7 @@ async function shutdownByDomain(domain, groupName) {
     }
 
     await VaultStorage.addGroup(groupName || domain, tabsToVault.map(extractTabData));
-    await chrome.tabs.remove(tabsToVault.map(t => t.id));
+    await closeTabsByExtension(tabsToVault.map(t => t.id));
 
     return { success: true, count: tabsToVault.length };
   } catch (error) {

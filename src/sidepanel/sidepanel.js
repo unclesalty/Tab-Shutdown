@@ -42,13 +42,17 @@ function setupTabListeners() {
   const handleTabChange = async () => {
     await updateOpenTabsCache();
     await updateLiveTabCount();
-    // Re-render vault if on vault tab to update active indicators
+    // Re-render current panel to reflect tab changes
     if (currentTab === 'vault') {
+      await renderHistorySection();
       if (currentSearchQuery) {
         await renderSearchResults();
       } else {
         await renderVaultGroups();
       }
+    } else if (currentTab === 'live') {
+      await renderLiveTabsPanel();
+      updateSelectedCount();
     }
   };
 
@@ -276,6 +280,7 @@ function updateSearchUI(tabName) {
 async function renderCurrentPanel() {
   switch (currentTab) {
     case 'vault':
+      await renderHistorySection();
       await renderVaultGroups();
       break;
     case 'live':
@@ -296,36 +301,56 @@ async function renderLiveTabsPanel() {
   const homePatterns = await HomeTabs.getHomePatterns();
   const searchQuery = currentSearchQuery.toLowerCase();
 
-  // Separate home tabs from regular tabs
-  const homeTabs = [];
+  // Build a map of open tabs by URL for quick lookup
+  const openTabsByUrl = new Map();
   const regularTabs = [];
 
   for (const tab of tabs) {
     if (UrlUtils.isSkippableUrl(tab.url)) continue;
 
-    // Filter by search query if present
-    if (searchQuery) {
-      const titleMatch = (tab.title || '').toLowerCase().includes(searchQuery);
-      const urlMatch = (tab.url || '').toLowerCase().includes(searchQuery);
-      if (!titleMatch && !urlMatch) continue;
-    }
-
     if (HomeTabs.isHomeTabSync(tab.url, homePatterns)) {
-      homeTabs.push(tab);
+      // Track this as a home tab instance (stores in chrome.storage)
+      await HomeTabs.trackHomeInstance({
+        url: tab.url,
+        title: tab.title,
+        favIconUrl: tab.favIconUrl
+      });
+      openTabsByUrl.set(tab.url, tab);
     } else {
+      // Filter regular tabs by search query if present
+      if (searchQuery) {
+        const titleMatch = (tab.title || '').toLowerCase().includes(searchQuery);
+        const urlMatch = (tab.url || '').toLowerCase().includes(searchQuery);
+        if (!titleMatch && !urlMatch) continue;
+      }
       regularTabs.push(tab);
     }
   }
 
-  // Render home tabs section
-  renderHomeTabsSection(homeTabs, homePatterns);
+  // Get all saved home tab instances (includes closed tabs)
+  const homeInstances = await HomeTabs.getHomeInstances();
+
+  // Filter instances by search query if present
+  let filteredInstances = homeInstances;
+  if (searchQuery) {
+    filteredInstances = homeInstances.filter(instance => {
+      const titleMatch = (instance.title || '').toLowerCase().includes(searchQuery);
+      const urlMatch = (instance.url || '').toLowerCase().includes(searchQuery);
+      return titleMatch || urlMatch;
+    });
+  }
+
+  // Render home tabs section with instances and open tab info
+  renderHomeTabsSection(filteredInstances, openTabsByUrl, homePatterns);
 
   // Render regular tabs
   renderOpenTabsList(regularTabs);
 }
 
 // Render the Home Tabs section
-function renderHomeTabsSection(homeTabs, homePatterns) {
+// instances: saved home tab instances (may be open or closed)
+// openTabsByUrl: Map of URL -> open tab object
+function renderHomeTabsSection(instances, openTabsByUrl, homePatterns) {
   const section = document.getElementById('homeTabsSection');
   const header = document.getElementById('homeTabsHeader');
   const container = document.getElementById('homeTabsList');
@@ -341,30 +366,48 @@ function renderHomeTabsSection(homeTabs, homePatterns) {
   }
 
   clearContainer(container);
-  countEl.textContent = homeTabs.length;
+  countEl.textContent = instances.length;
 
-  if (homeTabs.length === 0) {
+  if (instances.length === 0) {
     const emptyState = document.createElement('div');
     emptyState.className = 'home-tabs-empty';
-    emptyState.textContent = 'No protected tabs open';
+    emptyState.textContent = 'No protected tabs';
     container.appendChild(emptyState);
     return;
   }
 
-  for (const tab of homeTabs) {
-    container.appendChild(createHomeTabItem(tab, homePatterns));
+  // Sort instances: open tabs first, then by lastSeen
+  const sortedInstances = [...instances].sort((a, b) => {
+    const aOpen = openTabsByUrl.has(a.url);
+    const bOpen = openTabsByUrl.has(b.url);
+    if (aOpen && !bOpen) return -1;
+    if (!aOpen && bOpen) return 1;
+    return b.lastSeen - a.lastSeen;
+  });
+
+  for (const instance of sortedInstances) {
+    const openTab = openTabsByUrl.get(instance.url);
+    container.appendChild(createHomeTabItem(instance, openTab, homePatterns));
   }
 }
 
 // Create a home tab item
-function createHomeTabItem(tab, homePatterns) {
+// instance: saved home tab instance data
+// openTab: the open chrome tab (if currently open) or null
+function createHomeTabItem(instance, openTab, homePatterns) {
+  const isOpen = !!openTab;
+
   const item = document.createElement('div');
-  item.className = 'home-tab-item';
-  item.dataset.tabId = tab.id;
+  item.className = 'home-tab-item' + (isOpen ? ' active' : ' closed');
+  item.dataset.url = instance.url;
+  if (openTab) {
+    item.dataset.tabId = openTab.id;
+  }
 
   const favicon = document.createElement('img');
   favicon.className = 'tab-favicon';
-  favicon.src = tab.favIconUrl || getDefaultFavicon();
+  // Use openTab data if available (more current), fallback to instance
+  favicon.src = (openTab?.favIconUrl || instance.favIconUrl) || getDefaultFavicon();
   favicon.alt = '';
   favicon.onerror = () => {
     favicon.src = getDefaultFavicon();
@@ -375,14 +418,25 @@ function createHomeTabItem(tab, homePatterns) {
 
   const title = document.createElement('div');
   title.className = 'tab-title';
-  title.textContent = tab.title || 'Untitled';
+  title.textContent = (openTab?.title || instance.title) || 'Untitled';
 
   const url = document.createElement('div');
   url.className = 'tab-url';
-  url.textContent = truncateUrl(tab.url);
+  url.textContent = truncateUrl(instance.url);
 
   info.appendChild(title);
   info.appendChild(url);
+
+  // Status indicator
+  const status = document.createElement('span');
+  status.className = 'home-tab-status';
+  if (isOpen) {
+    status.textContent = 'Active';
+    status.classList.add('status-active');
+  } else {
+    status.textContent = 'Closed';
+    status.classList.add('status-closed');
+  }
 
   const unprotectBtn = document.createElement('button');
   unprotectBtn.className = 'unprotect-btn';
@@ -391,30 +445,38 @@ function createHomeTabItem(tab, homePatterns) {
   unprotectBtn.setAttribute('aria-label', 'Remove from Home Tabs');
   unprotectBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    // Re-fetch fresh data instead of using stale closure values
-    try {
-      const currentTab = await chrome.tabs.get(tab.id);
-      const currentPatterns = await HomeTabs.getHomePatterns();
-      if (currentTab && currentTab.url) {
-        await removeTabFromHome(currentTab.url, currentPatterns);
-      } else {
-        showToast('Error: Tab no longer exists', 'error');
-      }
-    } catch (err) {
-      // Tab may have been closed - still try to remove the pattern using stored URL
-      const currentPatterns = await HomeTabs.getHomePatterns();
-      await removeTabFromHome(tab.url, currentPatterns);
-    }
+    const currentPatterns = await HomeTabs.getHomePatterns();
+    await removeTabFromHome(instance.url, currentPatterns);
+    // Also remove the instance
+    await HomeTabs.removeHomeInstance(instance.url);
   });
 
   item.appendChild(favicon);
   item.appendChild(info);
+  item.appendChild(status);
   item.appendChild(unprotectBtn);
 
-  // Click on row navigates to tab (except on buttons)
+  // Click on row: navigate if open, open if closed
   item.addEventListener('click', async (e) => {
     if (e.target.closest('button')) return;
-    await navigateToTab(tab.id);
+
+    if (isOpen && openTab) {
+      // Tab is open - navigate to it
+      await navigateToTab(openTab.id);
+    } else {
+      // Tab is closed - open it
+      const newTab = await chrome.tabs.create({ url: instance.url, active: true });
+      // Track the new tab as an instance
+      await HomeTabs.trackHomeInstance({
+        url: instance.url,
+        title: instance.title,
+        favIconUrl: instance.favIconUrl
+      });
+      // Navigate to the new tab
+      await chrome.windows.update(newTab.windowId, { focused: true });
+      // Re-render to show updated state
+      await renderLiveTabsPanel();
+    }
   });
 
   return item;
@@ -433,6 +495,8 @@ async function removeTabFromHome(tabUrl, patterns) {
 
   if (matchingPattern) {
     await HomeTabs.removeHomePattern(matchingPattern);
+    // Clean up any instances that no longer match patterns
+    await HomeTabs.cleanupOrphanedInstances();
     showToast('Tab unprotected', 'success');
     await renderLiveTabsPanel();
     updateSelectedCount();
@@ -640,15 +704,15 @@ function createDomainTabItem(tab, groupCard) {
     await vaultSingleTab(tab);
   });
 
-  // Close button - close tab without vaulting
+  // Close button - close tab to history
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tab-action-btn close-btn';
   closeBtn.textContent = '\u{2715}'; // X mark
-  closeBtn.title = 'Close tab without vaulting';
-  closeBtn.setAttribute('aria-label', 'Close tab');
+  closeBtn.title = 'Close tab to history';
+  closeBtn.setAttribute('aria-label', 'Close tab to history');
   closeBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    await closeSingleTab(tab.id);
+    await closeTabToHistory(tab.id);
   });
 
   // Protect button - add to home tabs
@@ -792,14 +856,22 @@ async function vaultSingleTab(tab) {
   }
 }
 
-// Close a single tab without vaulting
-async function closeSingleTab(tabId) {
+// Close a single tab and save to history
+async function closeTabToHistory(tabId) {
   try {
-    await chrome.tabs.remove(tabId);
-    showToast('Tab closed', 'info');
-    await updateLiveTabCount();
-    await renderLiveTabsPanel();
-    updateSelectedCount();
+    const response = await chrome.runtime.sendMessage({
+      action: 'close-to-history',
+      tabId: tabId
+    });
+
+    if (response.success) {
+      showToast('Tab closed to history', 'info');
+      await updateLiveTabCount();
+      await renderLiveTabsPanel();
+      updateSelectedCount();
+    } else {
+      showToast('Error: ' + (response.error || 'Unknown error'), 'error');
+    }
   } catch (error) {
     showToast('Error closing tab', 'error');
   }
@@ -867,6 +939,175 @@ async function renderVaultGroups() {
   vault.groups.forEach(group => {
     container.appendChild(createGroupCard(group));
   });
+}
+
+// Track collapsed state for history section
+let historyCollapsed = false;
+
+// Render the history section in the vault panel
+async function renderHistorySection() {
+  const section = document.getElementById('historySection');
+  const header = document.getElementById('historyHeader');
+  const container = document.getElementById('historyList');
+  const countEl = document.getElementById('historyCount');
+  const emptyEl = document.getElementById('historyEmpty');
+  const footerEl = document.getElementById('historyFooter');
+
+  // Restore collapsed state
+  if (historyCollapsed) {
+    section.classList.add('collapsed');
+    header.setAttribute('aria-expanded', 'false');
+  } else {
+    section.classList.remove('collapsed');
+    header.setAttribute('aria-expanded', 'true');
+  }
+
+  // Set up header click handler (only once)
+  if (!header.dataset.initialized) {
+    header.dataset.initialized = 'true';
+    header.addEventListener('click', () => {
+      historyCollapsed = !historyCollapsed;
+      section.classList.toggle('collapsed');
+      header.setAttribute('aria-expanded', !historyCollapsed);
+    });
+  }
+
+  // Get history from service worker
+  const response = await chrome.runtime.sendMessage({ action: 'get-history' });
+  const history = response.success ? response.history : { tabs: [] };
+
+  clearContainer(container);
+  countEl.textContent = history.tabs.length;
+
+  if (history.tabs.length === 0) {
+    emptyEl.classList.remove('hidden');
+    footerEl.classList.add('hidden');
+    section.classList.add('empty');
+    return;
+  }
+
+  emptyEl.classList.add('hidden');
+  footerEl.classList.remove('hidden');
+  section.classList.remove('empty');
+
+  // Render history items
+  for (const tab of history.tabs) {
+    container.appendChild(createHistoryItem(tab));
+  }
+
+  // Set up clear history button (only once)
+  const clearBtn = document.getElementById('clearHistoryBtn');
+  if (!clearBtn.dataset.initialized) {
+    clearBtn.dataset.initialized = 'true';
+    clearBtn.addEventListener('click', async () => {
+      await chrome.runtime.sendMessage({ action: 'clear-history' });
+      showToast('History cleared', 'success');
+      await renderHistorySection();
+    });
+  }
+}
+
+// Create a history item element
+function createHistoryItem(tab) {
+  const item = document.createElement('div');
+  item.className = 'history-item';
+  item.dataset.tabId = tab.id;
+
+  const favicon = document.createElement('img');
+  favicon.className = 'tab-favicon';
+  favicon.src = tab.favIconUrl || getDefaultFavicon();
+  favicon.alt = '';
+  favicon.onerror = () => {
+    favicon.src = getDefaultFavicon();
+  };
+
+  const info = document.createElement('div');
+  info.className = 'tab-info';
+
+  const title = document.createElement('div');
+  title.className = 'tab-title';
+  title.textContent = tab.title || 'Untitled';
+
+  const urlEl = document.createElement('div');
+  urlEl.className = 'tab-url';
+  urlEl.textContent = truncateUrl(tab.url);
+
+  const timeEl = document.createElement('div');
+  timeEl.className = 'history-time';
+  timeEl.textContent = TabHistory.getTimeRemaining(tab);
+
+  info.appendChild(title);
+  info.appendChild(urlEl);
+
+  const actions = document.createElement('div');
+  actions.className = 'history-item-actions';
+
+  // Restore button
+  const restoreBtn = document.createElement('button');
+  restoreBtn.className = 'tab-action-btn restore-btn';
+  restoreBtn.textContent = '\u21B3'; // Arrow
+  restoreBtn.title = 'Restore tab';
+  restoreBtn.setAttribute('aria-label', 'Restore tab');
+  restoreBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await restoreFromHistory([tab.id]);
+  });
+
+  // Remove button
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'tab-action-btn close-btn';
+  removeBtn.textContent = '\u{2715}'; // X mark
+  removeBtn.title = 'Remove from history';
+  removeBtn.setAttribute('aria-label', 'Remove from history');
+  removeBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await removeFromHistory([tab.id]);
+  });
+
+  actions.appendChild(timeEl);
+  actions.appendChild(restoreBtn);
+  actions.appendChild(removeBtn);
+
+  item.appendChild(favicon);
+  item.appendChild(info);
+  item.appendChild(actions);
+
+  // Click on row restores the tab
+  item.addEventListener('click', async () => {
+    await restoreFromHistory([tab.id]);
+  });
+
+  return item;
+}
+
+// Restore tabs from history
+async function restoreFromHistory(tabIds) {
+  const response = await chrome.runtime.sendMessage({
+    action: 'restore-from-history',
+    tabIds: tabIds
+  });
+
+  if (response.success) {
+    showToast(`Restored ${response.count} ${pluralizeTabs(response.count)}`, 'success');
+    await renderHistorySection();
+  } else {
+    showToast('Error: ' + (response.error || 'Unknown error'), 'error');
+  }
+}
+
+// Remove tabs from history without restoring
+async function removeFromHistory(tabIds) {
+  const response = await chrome.runtime.sendMessage({
+    action: 'remove-from-history',
+    tabIds: tabIds
+  });
+
+  if (response.success) {
+    showToast('Removed from history', 'info');
+    await renderHistorySection();
+  } else {
+    showToast('Error: ' + (response.error || 'Unknown error'), 'error');
+  }
 }
 
 // Create a group card element
