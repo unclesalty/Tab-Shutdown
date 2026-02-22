@@ -1,6 +1,6 @@
-# Contributing to Tab Vault
+# Contributing to Tab Goblin
 
-Thank you for your interest in contributing to Tab Vault! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to Tab Goblin! This document provides guidelines and information for contributors.
 
 ## Table of Contents
 
@@ -77,7 +77,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 4. **Reload the extension**
    - Go to `chrome://extensions`
-   - Click the reload icon on Tab Vault
+   - Click the reload icon on Tab Goblin
    - Or use the keyboard shortcut (if configured)
 
 ### Project Structure
@@ -392,4 +392,4 @@ If you have questions:
 - Comment on a related Issue
 - Reach out to maintainers
 
-Thank you for contributing to Tab Vault!
+Thank you for contributing to Tab Goblin!

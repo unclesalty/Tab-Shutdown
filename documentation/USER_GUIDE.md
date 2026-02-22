@@ -1,6 +1,6 @@
 # User Guide
 
-Complete guide to using Tab Vault effectively.
+Complete guide to using Tab Goblin effectively.
 
 ## Table of Contents
 
@@ -20,7 +20,7 @@ Complete guide to using Tab Vault effectively.
 
 ### Tab States
 
-In Tab Vault, a tab exists in one of two states:
+In Tab Goblin, a tab exists in one of two states:
 
 | State | Description | Resource Usage |
 |-------|-------------|----------------|
@@ -48,11 +48,11 @@ Home tabs are **protected** tabs that are never vaulted:
 
 ## The Popup Interface
 
-Click the Tab Vault icon to open the main interface.
+Click the Tab Goblin icon to open the main interface.
 
 ### Header
 
-- **Tab Vault** — Extension name
+- **Tab Goblin** — Extension name
 - **X tabs open** — Current count of open browser tabs
 
 ### Action Bar
@@ -85,7 +85,7 @@ Type in the search box to filter tabs across all groups.
 
 Quickly vault every open tab (except home tabs):
 
-1. Click the Tab Vault icon
+1. Click the Tab Goblin icon
 2. Click **Shutdown All**
 3. Confirm the action
 4. All non-home tabs close and appear in the vault
@@ -210,12 +210,12 @@ Home tabs are protected from vaulting. Perfect for:
 
 **Method 1: Add Current Tab**
 1. Navigate to the page you want protected
-2. Open Tab Vault popup
+2. Open Tab Goblin popup
 3. Click **Settings**
 4. Click **Add Current Tab**
 
 **Method 2: Add URL Pattern**
-1. Open Tab Vault popup
+1. Open Tab Goblin popup
 2. Click **Settings**
 3. Type a URL pattern
 4. Click **Add**
@@ -234,7 +234,7 @@ Patterns use `*` as a wildcard:
 
 ### Removing Home Tab Patterns
 
-1. Open Tab Vault popup
+1. Open Tab Goblin popup
 2. Click **Settings**
 3. Find the pattern
 4. Click the **×** button next to it
@@ -252,7 +252,7 @@ In the "Select Tabs" view:
 
 ### Basic Search
 
-1. Open the Tab Vault popup
+1. Open the Tab Goblin popup
 2. Type in the search box
 3. Results filter in real-time
 
@@ -287,7 +287,7 @@ Search looks at:
 ### Customizing Shortcuts
 
 1. Go to `chrome://extensions/shortcuts`
-2. Find "Tab Vault"
+2. Find "Tab Goblin"
 3. Click the pencil icon next to a command
 4. Press your new key combination
 5. Click OK
@@ -357,7 +357,7 @@ While researching a topic:
 
 No. Once deleted, a group is permanently removed. Consider using "Copy" instead of "Restore" if you want to keep tabs in the vault.
 
-### Does Tab Vault sync across devices?
+### Does Tab Goblin sync across devices?
 
 Not currently. Vault data is stored locally on each device.
 
@@ -371,7 +371,7 @@ Extensions typically don't have access to incognito windows unless explicitly al
 
 ### Is my data private?
 
-Yes. Tab Vault stores everything locally in your browser. No data is sent to external servers.
+Yes. Tab Goblin stores everything locally in your browser. No data is sent to external servers.
 
 ### How much space does the vault use?
 

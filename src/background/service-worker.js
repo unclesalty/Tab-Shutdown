@@ -1,7 +1,11 @@
-// Tab Vault - Background Service Worker
+// Tab Goblin - Background Service Worker
 // Handles shutdown and restore operations
 
 importScripts('../common/storage.js', '../common/home-tabs.js');
+
+// Configure side panel to open on extension icon click
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+  .catch((error) => console.error('Error setting side panel behavior:', error));
 
 // Helper: Check if URL should be skipped (chrome:// or extension pages)
 function isSkippableUrl(url) {
@@ -182,8 +186,65 @@ async function handleMessage(message) {
     case 'get-domain-groups':
       return { success: true, domains: await getDomainGroups() };
 
+    case 'navigate-to-tab':
+      return await navigateToTab(message.tabId);
+
+    case 'find-open-tab-by-url':
+      return await findOpenTabByUrl(message.url);
+
     default:
       return { success: false, error: 'Unknown action' };
+  }
+}
+
+/**
+ * Navigate to a specific tab and focus its window
+ * @param {number} tabId - Chrome tab ID
+ * @returns {Promise<{success: boolean}>}
+ */
+async function navigateToTab(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    await chrome.tabs.update(tabId, { active: true });
+    await chrome.windows.update(tab.windowId, { focused: true });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Find an open tab by URL
+ * @param {string} url - URL to search for
+ * @returns {Promise<{success: boolean, tabId?: number}>}
+ */
+async function findOpenTabByUrl(url) {
+  try {
+    const tabs = await chrome.tabs.query({});
+    const matchingTab = tabs.find(tab => normalizeUrl(tab.url) === normalizeUrl(url));
+    if (matchingTab) {
+      return { success: true, tabId: matchingTab.id, windowId: matchingTab.windowId };
+    }
+    return { success: false, error: 'Tab not found' };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Normalize URL for comparison (remove trailing slashes, normalize protocol)
+ * @param {string} url
+ * @returns {string}
+ */
+function normalizeUrl(url) {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    // Remove trailing slash from pathname
+    let pathname = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}`;
+  } catch {
+    return url;
   }
 }
 
@@ -321,15 +382,23 @@ async function restoreGroup(groupId) {
       return { success: false, error: 'Group not found' };
     }
 
-    // Open all tabs
+    // Open all tabs, track the first one for navigation
+    let firstTab = null;
     for (const tab of group.tabs) {
-      await chrome.tabs.create({ url: tab.url, active: false });
+      const newTab = await chrome.tabs.create({ url: tab.url, active: false });
+      if (!firstTab) firstTab = newTab;
     }
 
     // Remove group from vault
     await VaultStorage.removeGroup(groupId);
 
-    return { success: true, count: group.tabs.length };
+    // Navigate to the first restored tab
+    if (firstTab) {
+      await chrome.tabs.update(firstTab.id, { active: true });
+      await chrome.windows.update(firstTab.windowId, { focused: true });
+    }
+
+    return { success: true, count: group.tabs.length, navigatedTabId: firstTab?.id };
   } catch (error) {
     console.error('Error in restoreGroup:', error);
     return { success: false, error: error.message };
@@ -351,13 +420,21 @@ async function restoreTabs(groupId, tabIds) {
     const tabIdSet = new Set(tabIds);
     const tabsToRestore = group.tabs.filter(t => tabIdSet.has(t.id));
 
-    // Open the tabs
+    // Open the tabs, track the first one for navigation
+    let firstTab = null;
     for (const tab of tabsToRestore) {
-      await chrome.tabs.create({ url: tab.url, active: false });
+      const newTab = await chrome.tabs.create({ url: tab.url, active: false });
+      if (!firstTab) firstTab = newTab;
     }
 
     // Remove tabs from group
     await VaultStorage.removeTabsFromGroup(groupId, tabIds);
+
+    // Navigate to the first restored tab
+    if (firstTab) {
+      await chrome.tabs.update(firstTab.id, { active: true });
+      await chrome.windows.update(firstTab.windowId, { focused: true });
+    }
 
     // Check if group is now empty and remove it
     const updatedGroup = await VaultStorage.getGroup(groupId);

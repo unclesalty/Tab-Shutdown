@@ -1,4 +1,6 @@
-# Tab Vault
+# Tab Goblin
+
+**Status:** v2 Complete | v3 In Development
 
 A Chrome extension that fully closes tabs to reclaim RAM/CPU while preserving them in an organized vault for later restoration.
 
@@ -8,9 +10,9 @@ Too many open Chrome tabs destroy RAM/CPU and slow everything down. But for ADHD
 
 ## The Solution
 
-**Tab Vault** lets you fully close tabs to reclaim system resources while preserving them in an organized vault you can restore from at any time.
+**Tab Goblin** lets you fully close tabs to reclaim system resources while preserving them in an organized vault you can restore from at any time.
 
-Unlike tab suspenders or discarding features, Tab Vault **actually closes tabs**. Vaulted tabs consume zero memory. When you need them back, restore with one click.
+Unlike tab suspenders or discarding features, Tab Goblin **actually closes tabs**. Vaulted tabs consume zero memory. When you need them back, restore with one click.
 
 ## Features
 
@@ -21,8 +23,35 @@ Unlike tab suspenders or discarding features, Tab Vault **actually closes tabs**
 - **Home Tab Protection** — Designate tabs that are never vaulted (e.g., Gmail, Calendar)
 - **Search Vault** — Find any vaulted tab across all groups
 - **Restore & Copy** — Restore tabs (removes from vault) or open copies (keeps in vault)
+- **Tab Navigation** — Click vault tabs to navigate to open tabs, auto-navigate on restore
+- **Drag-and-Drop** — Move tabs between vault groups
 - **Keyboard Shortcuts** — Quick vault with `Alt+Shift+V` (current tab) or `Alt+Shift+A` (all tabs)
 - **Persistent Storage** — Vault survives browser restarts and extension updates
+- **Side Panel UI** — Persistent panel that stays open while you browse
+
+## Roadmap
+
+### v1 (Complete)
+Core functionality: vault/restore tabs, home tab protection, search, keyboard shortcuts, group management.
+
+### v2 (Complete)
+UI/UX improvements:
+- **Side Panel** — Persistent panel using chrome.sidePanel (replaces popup)
+- **Tab-Based Navigation** — Tabs for Vault, Live Tabs, Settings
+- **Unified Display** — Live tabs shown in accordion style matching vault
+- **Drag-and-Drop** — Move tabs between groups
+- **Accessibility** — Keyboard navigation, screen reader support
+
+### v3 (In Development)
+Theme system, navigation, and refinements:
+- **Bug Fix** — Live Tabs panel not displaying open tabs
+- **Theme System** — Light/Dark/System/Custom modes
+- **5 Dark Palettes** — Midnight Glass, Neon Ember, Soft Lavender, Arctic Mint, Slate Minimal
+- **Tab Navigation** — Click active vault tabs to navigate, auto-navigate on restore
+- **Simplified Header** — Clean, minimal design
+- **Remove Emojis** — Prepare for custom iconography
+
+See [TICKETS.md](TICKETS.md) for detailed implementation plan.
 
 ## Installation
 
@@ -33,7 +62,7 @@ Unlike tab suspenders or discarding features, Tab Vault **actually closes tabs**
 3. Enable **Developer mode** (toggle in top right)
 4. Click **Load unpacked**
 5. Select the `chrome_tab_shutdown` folder
-6. The Tab Vault icon will appear in your toolbar
+6. The Tab Goblin icon will appear in your toolbar
 
 ### From Chrome Web Store
 
@@ -43,7 +72,7 @@ Unlike tab suspenders or discarding features, Tab Vault **actually closes tabs**
 
 ### Quick Start
 
-1. Click the Tab Vault icon in your toolbar
+1. Click the Tab Goblin icon in your toolbar (opens side panel)
 2. Click **Shutdown All** to vault all open tabs
 3. Your tabs are now saved and closed
 4. Click **Restore** on any group to bring tabs back
@@ -54,8 +83,8 @@ Unlike tab suspenders or discarding features, Tab Vault **actually closes tabs**
 |--------|-----|
 | Vault current tab | Press `Alt+Shift+V` |
 | Vault all tabs | Press `Alt+Shift+A` or click "Shutdown All" |
-| Vault selected tabs | Click "Select Tabs", choose tabs, click "Shutdown Selected" |
-| Vault by domain | Click "..." button, select a domain, click "Vault" |
+| Vault selected tabs | Go to "Live Tabs" tab, select tabs, click "Vault Selected" |
+| Vault by domain | In "Live Tabs", click "Vault" on a domain group |
 
 ### Restoring Tabs
 
@@ -69,9 +98,9 @@ Unlike tab suspenders or discarding features, Tab Vault **actually closes tabs**
 
 Home tabs are never vaulted, even during "Shutdown All":
 
-1. Click **Settings** in the popup footer
+1. Go to **Settings** tab in the side panel
 2. Add URL patterns (e.g., `*://mail.google.com/*`)
-3. Or click **Add Current Tab** while on a page you want protected
+3. Or in **Live Tabs**, click the protect button on any tab
 
 Pattern examples:
 - `*://mail.google.com/*` — Protects all Gmail pages
@@ -80,13 +109,14 @@ Pattern examples:
 
 ### Searching the Vault
 
-Type in the search box to filter tabs across all groups by title or URL.
+In the **Vault** tab, type in the search box to filter tabs across all groups by title or URL.
 
 ### Managing Groups
 
-- **Rename** — Click the menu (⋮) on a group, select "Rename"
-- **Delete** — Click the menu (⋮) on a group, select "Delete"
-- **Reorder** — Click the menu (⋮), use "Move Up" or "Move Down"
+- **Rename** — Click the menu button on a group, select "Rename"
+- **Delete** — Click the menu button on a group, select "Delete"
+- **Reorder** — Click the menu button, use "Move Up" or "Move Down"
+- **Drag-and-Drop** — Drag tabs between groups to reorganize
 
 ## Keyboard Shortcuts
 
@@ -97,17 +127,19 @@ Type in the search box to filter tabs across all groups by title or URL.
 
 To customize shortcuts:
 1. Go to `chrome://extensions/shortcuts`
-2. Find "Tab Vault"
+2. Find "Tab Goblin"
 3. Set your preferred key combinations
 
 ## How It's Built
 
-Tab Vault is a Chrome Extension built with:
+Tab Goblin is a Chrome Extension built with:
 
 - **Manifest V3** — Latest Chrome extension architecture
 - **Vanilla JavaScript** — No frameworks, no build tools
 - **Chrome Storage API** — Local storage for vault data
 - **Chrome Tabs API** — Tab management and manipulation
+- **Chrome Side Panel API** — Persistent side panel UI
+- **CSS Custom Properties** — Theme system (v3)
 
 ### Project Structure
 
@@ -123,12 +155,14 @@ chrome_tab_shutdown/
 │   ├── common/
 │   │   ├── storage.js      # Vault data CRUD operations
 │   │   ├── home-tabs.js    # Home tab pattern matching
-│   │   └── settings.js     # User preferences
-│   └── popup/
-│       ├── popup.html      # Popup UI structure
-│       ├── popup.css       # Popup styling
-│       └── popup.js        # Popup interactivity
+│   │   ├── settings.js     # User preferences
+│   │   └── themes.js       # Theme definitions (v3)
+│   └── sidepanel/
+│       ├── sidepanel.html  # Side panel UI structure
+│       ├── sidepanel.css   # Side panel styling + themes
+│       └── sidepanel.js    # Side panel interactivity
 ├── documentation/          # Detailed documentation
+├── archive/                # Previous version documents
 ├── PRD.md                  # Product requirements
 ├── TICKETS.md              # Implementation tickets
 └── CLAUDE.md               # AI assistant instructions
@@ -157,6 +191,11 @@ Vault data is stored in `chrome.storage.local`:
         ]
       }
     ]
+  },
+  "settings": {
+    "themeMode": "system",
+    "themePalette": "slate-minimal",
+    "activeTab": "vault"
   }
 }
 ```
@@ -170,7 +209,7 @@ We welcome contributions! See [CONTRIBUTING.md](documentation/CONTRIBUTING.md) f
 1. Clone the repository
 2. Load the extension in Chrome (Developer mode)
 3. Make changes to source files
-4. Reload the extension to test (`chrome://extensions` → Reload)
+4. Reload the extension to test (`chrome://extensions` -> Reload)
 
 ### Code Style
 
@@ -178,6 +217,7 @@ We welcome contributions! See [CONTRIBUTING.md](documentation/CONTRIBUTING.md) f
 - No external dependencies
 - Safe DOM manipulation (no innerHTML with untrusted content)
 - Async/await for Chrome API calls
+- CSS custom properties for all colors
 
 ### Running Reviews
 
@@ -197,8 +237,8 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/tab-vault/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/tab-vault/discussions)
+- **Issues**: [GitHub Issues](https://github.com/yourusername/tab-goblin/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/tab-goblin/discussions)
 
 ---
 
