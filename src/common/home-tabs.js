@@ -1,4 +1,4 @@
-// Tab Vault - Home Tabs Module
+// Tab Goblin - Home Tabs Module
 // Manages home tab URL patterns that are protected from shutdown
 
 const HOME_PATTERNS_KEY = 'homeTabPatterns';

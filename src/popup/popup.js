@@ -1,4 +1,4 @@
-// Tab Vault - Popup Script
+// Tab Goblin - Popup Script
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -81,7 +81,7 @@ function showOnboardingTip() {
 
   const title = document.createElement('div');
   title.className = 'onboarding-title';
-  title.textContent = 'Welcome to Tab Vault!';
+  title.textContent = 'Welcome to Tab Goblin!';
 
   const text = document.createElement('div');
   text.className = 'onboarding-text';
