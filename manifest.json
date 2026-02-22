@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Tab Vault",
+  "name": "Tab Goblin",
   "version": "2.0.0",
-  "description": "Fully close tabs to reclaim RAM/CPU while preserving them in an organized vault.",
+  "description": "Fully close tabs to reclaim RAM/CPU while preserving them in an organized vault. Tab Goblin helps you manage browser tab overload.",
   "permissions": [
     "tabs",
     "storage",

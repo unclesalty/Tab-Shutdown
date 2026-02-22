@@ -4,25 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Tab Vault** — a Chrome extension (Manifest V3) that solves RAM/CPU drain from too many tabs while preserving them as ADHD workflow aids. Tabs are either live (open) or vaulted (fully closed and saved). No suspension, no halfway — closed is closed.
+**Tab Goblin** (formerly Tab Vault) — a Chrome extension (Manifest V3) that solves RAM/CPU drain from too many tabs while preserving them as ADHD workflow aids. Tabs are either live (open) or vaulted (fully closed and saved). No suspension, no halfway — closed is closed.
 
 ## Current Status
 
-**v2 Complete** — Side panel UI with full feature set:
-- Side panel replaces popup (chrome.sidePanel API)
-- Tab-based navigation (Vault, Live Tabs, Settings)
+**v3 In Progress** — Theme system, navigation, and bug fixes:
+- Bug fix: Live Tabs panel not displaying open tabs
+- Rebrand: "Tab Vault" to "Tab Goblin"
+- Remove emojis from UI
+- Simplified header design
+- Theme system (light/dark/system/custom modes)
+- 5 dark theme palettes
+- Tab navigation: click active tabs to navigate, auto-navigate on restore
+
+**v2 Complete** (archived):
+- Side panel UI with tab-based navigation (Vault, Live Tabs, Settings)
 - Unified accordion display for live tabs by domain
 - Drag-and-drop between vault groups
 - Home tab protection with quick-add/remove
 - Keyboard navigation and accessibility
-- All v1 features preserved
 
 ## Key Documents
 
-- **PRD.md** — Full product requirements and feature specs
+- **PRD.md** — Full product requirements for v3
 - **TICKETS.md** — Implementation tickets (check for `[DONE]` status)
 - **PROMPT.md** — Ralph Loop instructions (ONLY used with `/ralph-loop` command)
-- **archive/** — Completed iteration documents
+- **archive/** — Completed v1/v2 iteration documents
 - **documentation/** — User guide, developer guide, contributing guide
 
 ## Important: Ralph Loop Usage
@@ -36,8 +43,9 @@ For normal conversation and assistance, ignore PROMPT.md entirely.
 - Chrome Extension Manifest V3
 - Vanilla HTML/CSS/JS (no frameworks, no bundlers)
 - `chrome.storage.local` for persistence
-- `chrome.sidePanel` for UI (v2)
+- `chrome.sidePanel` for UI
 - Background service worker for tab operations
+- CSS custom properties for theming
 
 ## File Structure
 
@@ -45,13 +53,20 @@ For normal conversation and assistance, ignore PROMPT.md entirely.
 chrome_tab_shutdown/
 ├── manifest.json
 ├── src/
-│   ├── sidepanel/        # Side panel UI (v2)
-│   ├── popup/            # Popup UI (v1, deprecated in v2)
+│   ├── sidepanel/        # Side panel UI
+│   │   ├── sidepanel.html
+│   │   ├── sidepanel.css  # Theme system here
+│   │   └── sidepanel.js
 │   ├── background/       # Service worker
-│   ├── common/           # Shared modules (storage, home-tabs, settings)
+│   ├── common/           # Shared modules
+│   │   ├── storage.js    # Vault storage
+│   │   ├── home-tabs.js  # Home tab patterns
+│   │   ├── settings.js   # User settings
+│   │   └── themes.js     # Theme definitions (v3)
 │   └── assets/           # Icons
 ├── documentation/        # User and developer docs
 ├── archive/              # Completed iteration documents
+├── images_context_input/ # Reference images (palettes, screenshots)
 ├── PRD.md
 ├── TICKETS.md
 ├── PROMPT.md
@@ -60,7 +75,7 @@ chrome_tab_shutdown/
 
 ## API Reference
 
-### chrome.sidePanel (v2)
+### chrome.sidePanel
 
 ```javascript
 // Open side panel on action click
@@ -76,7 +91,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 ### Message Passing
 
 ```javascript
-// Popup/SidePanel → Service Worker
+// SidePanel to Service Worker
 chrome.runtime.sendMessage({ action: 'shutdown-all' });
 
 // Service Worker message handlers
@@ -91,12 +106,56 @@ chrome.runtime.sendMessage({ action: 'shutdown-all' });
 'get-domain-groups'       // Get live tabs grouped by domain
 ```
 
+### Theme System (v3)
+
+```css
+/* CSS custom properties */
+:root {
+  --bg: #ffffff;
+  --bg-surface: #f9f9f9;
+  --primary: #4A90D9;
+  --text: #333333;
+  /* ... */
+}
+
+/* Dark theme example */
+[data-theme="midnight-glass"] {
+  --bg: #0f172a;
+  --primary: #0ea5e9;
+  /* ... */
+}
+```
+
+```javascript
+// Theme modes: 'system' | 'light' | 'dark' | 'custom'
+// Apply theme
+document.documentElement.setAttribute('data-theme', 'midnight-glass');
+```
+
+### Tab Navigation (v3)
+
+```javascript
+// Navigate to a specific tab and focus its window
+async function navigateToTab(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  await chrome.tabs.update(tabId, { active: true });
+  await chrome.windows.update(tab.windowId, { focused: true });
+}
+
+// Listen for tab changes to update active indicators
+chrome.tabs.onCreated.addListener(callback);
+chrome.tabs.onRemoved.addListener(callback);
+chrome.tabs.onUpdated.addListener(callback);
+```
+
 ## Code Standards
 
 - **Safe DOM** — Use createElement/textContent, never parse HTML with untrusted content
 - **Async/await** — For all Chrome API calls
 - **Error handling** — Try/catch on async operations
 - **Input validation** — Validate message parameters and user input
+- **CSS variables** — All colors via custom properties (v3)
+- **No emojis** — Use text labels or Unicode symbols only (v3)
 - **No console.log** — Remove debug statements before completion
 
 ## Context7 Usage

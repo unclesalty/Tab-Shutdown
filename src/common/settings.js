@@ -1,4 +1,4 @@
-// Tab Vault - Settings Module
+// Tab Goblin - Settings Module
 // Manages user preferences
 
 const SETTINGS_KEY = 'settings';
@@ -6,7 +6,9 @@ const SETTINGS_KEY = 'settings';
 const DEFAULT_SETTINGS = {
   skipShutdownAllConfirm: false,
   skipLargeRestoreConfirm: false,
-  onboardingComplete: false
+  onboardingComplete: false,
+  themeMode: 'system',      // 'system' | 'light' | 'dark' | 'custom'
+  themePalette: 'slate-minimal'  // Theme key for dark/custom modes
 };
 
 /**

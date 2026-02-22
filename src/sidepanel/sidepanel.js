@@ -1,18 +1,23 @@
-// Tab Vault - Side Panel Script
+// Tab Goblin - Side Panel Script
 
 document.addEventListener('DOMContentLoaded', init);
 
 // Track selected tabs for shutdown
 let selectedTabIds = new Set();
 
+// Track expanded state for accordions (persists across re-renders)
+let expandedDomainGroups = new Set(); // For Live Tabs panel
+let expandedVaultGroups = new Set();  // For Vault panel
+let homeTabsCollapsed = false;        // For Home Tabs section
+
 // Debounce timer for search
 let searchDebounceTimer = null;
 
-// Current search query
+// Current search query (shared across panels)
 let currentSearchQuery = '';
 
 // Current active tab
-let currentTab = 'vault';
+let currentTab = 'live';
 
 // Helper: Pluralize 'tab' based on count
 function pluralizeTabs(count) {
@@ -27,8 +32,10 @@ function clearContainer(container) {
 }
 
 // Helper: Check if URL should be skipped (chrome:// or extension pages)
+// Returns true only for chrome:// and extension pages, NOT for undefined URLs
 function isSkippableUrl(url) {
-  return !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://');
+  if (!url) return false; // Don't skip tabs with undefined URL - they're valid tabs
+  return url.startsWith('chrome://') || url.startsWith('chrome-extension://');
 }
 
 // Toast notification helper
@@ -59,11 +66,186 @@ function setLoading(btn, loading) {
 }
 
 async function init() {
+  await initTheme();
+  await updateOpenTabsCache();
   await loadActiveTab();
   await updateLiveTabCount();
   await renderCurrentPanel();
   setupEventListeners();
+  setupTabListeners();
   await checkOnboarding();
+}
+
+// Set up listeners for tab changes to update active indicators
+function setupTabListeners() {
+  // Update cache and re-render vault when tabs change
+  const handleTabChange = async () => {
+    await updateOpenTabsCache();
+    await updateLiveTabCount();
+    // Re-render vault if on vault tab to update active indicators
+    if (currentTab === 'vault') {
+      if (currentSearchQuery) {
+        await renderSearchResults();
+      } else {
+        await renderVaultGroups();
+      }
+    }
+  };
+
+  chrome.tabs.onCreated.addListener(handleTabChange);
+  chrome.tabs.onRemoved.addListener(handleTabChange);
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    // Only re-render if URL changed
+    if (changeInfo.url) {
+      handleTabChange();
+    }
+  });
+}
+
+// Initialize theme from settings
+async function initTheme() {
+  try {
+    const themeMode = await Settings.getSetting('themeMode');
+    const themePalette = await Settings.getSetting('themePalette');
+
+    applyThemeFromSettings(themeMode, themePalette);
+
+    // Listen for system preference changes
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', handleSystemThemeChange);
+  } catch (error) {
+    // Default to system theme on error
+    Themes.applyTheme(null);
+  }
+}
+
+// Apply theme based on mode and palette settings
+function applyThemeFromSettings(themeMode, themePalette) {
+  switch (themeMode) {
+    case 'light':
+      Themes.applyTheme('light');
+      break;
+    case 'dark':
+    case 'custom':
+      Themes.applyTheme(themePalette || 'slate-minimal');
+      break;
+    case 'system':
+    default:
+      Themes.applyTheme(null); // Let CSS media query handle it
+      break;
+  }
+}
+
+// Handle system theme preference change
+async function handleSystemThemeChange() {
+  const themeMode = await Settings.getSetting('themeMode');
+  if (themeMode === 'system') {
+    // Re-apply to trigger any necessary updates
+    Themes.applyTheme(null);
+  }
+}
+
+// Handle theme mode radio button change
+async function handleThemeModeChange(e) {
+  const mode = e.target.value;
+  await Settings.updateSetting('themeMode', mode);
+
+  const paletteSelector = document.getElementById('darkPaletteSelector');
+
+  if (mode === 'dark') {
+    // Show palette selector for dark mode
+    paletteSelector.classList.remove('hidden');
+    const currentPalette = await Settings.getSetting('themePalette') || 'slate-minimal';
+    Themes.applyTheme(currentPalette);
+  } else {
+    // Hide palette selector
+    paletteSelector.classList.add('hidden');
+
+    if (mode === 'light') {
+      Themes.applyTheme('light');
+    } else {
+      // System mode
+      Themes.applyTheme(null);
+    }
+  }
+}
+
+// Handle palette button click
+async function handlePaletteChange(palette) {
+  // Update active state
+  document.querySelectorAll('.palette-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.palette === palette);
+  });
+
+  // Save and apply
+  await Settings.updateSetting('themePalette', palette);
+  Themes.applyTheme(palette);
+}
+
+// Initialize theme selector UI from settings
+async function initThemeSelector() {
+  const themeMode = await Settings.getSetting('themeMode') || 'system';
+  const themePalette = await Settings.getSetting('themePalette') || 'slate-minimal';
+
+  // Set radio button
+  const radio = document.querySelector(`input[name="themeMode"][value="${themeMode}"]`);
+  if (radio) radio.checked = true;
+
+  // Show/hide palette selector
+  const paletteSelector = document.getElementById('darkPaletteSelector');
+  if (themeMode === 'dark') {
+    paletteSelector.classList.remove('hidden');
+  } else {
+    paletteSelector.classList.add('hidden');
+  }
+
+  // Set active palette
+  document.querySelectorAll('.palette-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.palette === themePalette);
+  });
+}
+
+// Cache of open tabs for active status checking
+let openTabsCache = [];
+
+// Update cache of open tabs
+async function updateOpenTabsCache() {
+  try {
+    openTabsCache = await chrome.tabs.query({});
+  } catch (error) {
+    openTabsCache = [];
+  }
+}
+
+// Check if a URL matches any open tab and return the tab if found
+function findOpenTabByUrl(url) {
+  if (!url || !openTabsCache.length) return null;
+  const normalizedUrl = normalizeUrlForComparison(url);
+  return openTabsCache.find(tab => normalizeUrlForComparison(tab.url) === normalizedUrl);
+}
+
+// Normalize URL for comparison (remove trailing slashes, handle variations)
+function normalizeUrlForComparison(url) {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    let pathname = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
+}
+
+// Navigate to a specific tab
+async function navigateToTab(tabId) {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: 'navigate-to-tab',
+      tabId: tabId
+    });
+    return response.success;
+  } catch (error) {
+    return false;
+  }
 }
 
 // Load persisted active tab from settings
@@ -74,10 +256,11 @@ async function loadActiveTab() {
       currentTab = activeTab;
     }
   } catch (error) {
-    currentTab = 'vault';
+    currentTab = 'live';
   }
   updateTabBarUI();
   showPanel(currentTab);
+  updateSearchUI(currentTab);
 }
 
 // Save active tab to settings
@@ -117,8 +300,28 @@ async function switchToTab(tabName) {
   currentTab = tabName;
   updateTabBarUI();
   showPanel(tabName);
+  updateSearchUI(tabName);
   await saveActiveTab(tabName);
   await renderCurrentPanel();
+}
+
+// Update search UI based on active panel
+function updateSearchUI(tabName) {
+  const searchContainer = document.getElementById('searchContainer');
+  const searchInput = document.getElementById('globalSearchInput');
+
+  // Clear search when switching tabs
+  currentSearchQuery = '';
+  searchInput.value = '';
+
+  // Hide search on settings, show on others
+  if (tabName === 'settings') {
+    searchContainer.classList.add('hidden');
+  } else {
+    searchContainer.classList.remove('hidden');
+    // Update placeholder based on panel
+    searchInput.placeholder = tabName === 'live' ? 'Search open tabs...' : 'Search vaulted tabs...';
+  }
 }
 
 // Render content for current panel
@@ -129,12 +332,12 @@ async function renderCurrentPanel() {
       break;
     case 'live':
       selectedTabIds.clear();
-      document.getElementById('groupNameInput').value = '';
       await renderLiveTabsPanel();
       updateSelectedCount();
       break;
     case 'settings':
       await renderHomePatterns();
+      await initThemeSelector();
       break;
   }
 }
@@ -143,6 +346,7 @@ async function renderCurrentPanel() {
 async function renderLiveTabsPanel() {
   const tabs = await chrome.tabs.query({});
   const homePatterns = await HomeTabs.getHomePatterns();
+  const searchQuery = currentSearchQuery.toLowerCase();
 
   // Separate home tabs from regular tabs
   const homeTabs = [];
@@ -150,6 +354,13 @@ async function renderLiveTabsPanel() {
 
   for (const tab of tabs) {
     if (isSkippableUrl(tab.url)) continue;
+
+    // Filter by search query if present
+    if (searchQuery) {
+      const titleMatch = (tab.title || '').toLowerCase().includes(searchQuery);
+      const urlMatch = (tab.url || '').toLowerCase().includes(searchQuery);
+      if (!titleMatch && !urlMatch) continue;
+    }
 
     if (HomeTabs.isHomeTabSync(tab.url, homePatterns)) {
       homeTabs.push(tab);
@@ -167,8 +378,19 @@ async function renderLiveTabsPanel() {
 
 // Render the Home Tabs section
 function renderHomeTabsSection(homeTabs, homePatterns) {
+  const section = document.getElementById('homeTabsSection');
+  const header = document.getElementById('homeTabsHeader');
   const container = document.getElementById('homeTabsList');
   const countEl = document.getElementById('homeTabsCount');
+
+  // Restore collapsed state
+  if (homeTabsCollapsed) {
+    section.classList.add('collapsed');
+    header.setAttribute('aria-expanded', 'false');
+  } else {
+    section.classList.remove('collapsed');
+    header.setAttribute('aria-expanded', 'true');
+  }
 
   clearContainer(container);
   countEl.textContent = homeTabs.length;
@@ -227,6 +449,12 @@ function createHomeTabItem(tab, homePatterns) {
   item.appendChild(favicon);
   item.appendChild(info);
   item.appendChild(unprotectBtn);
+
+  // Click on row navigates to tab (except on buttons)
+  item.addEventListener('click', async (e) => {
+    if (e.target.closest('button')) return;
+    await navigateToTab(tab.id);
+  });
 
   return item;
 }
@@ -313,6 +541,11 @@ function createDomainGroupCard(domain, tabs) {
   card.className = 'domain-group-card';
   card.dataset.domain = domain;
 
+  // Restore expanded state if previously expanded
+  if (expandedDomainGroups.has(domain)) {
+    card.classList.add('expanded');
+  }
+
   // Group header
   const header = document.createElement('div');
   header.className = 'domain-group-header';
@@ -372,6 +605,12 @@ function createDomainGroupCard(domain, tabs) {
   header.addEventListener('click', (e) => {
     if (e.target.closest('.domain-group-actions') || e.target.closest('.domain-group-checkbox')) return;
     card.classList.toggle('expanded');
+    // Track expanded state
+    if (card.classList.contains('expanded')) {
+      expandedDomainGroups.add(domain);
+    } else {
+      expandedDomainGroups.delete(domain);
+    }
   });
 
   // Group tabs container
@@ -432,27 +671,56 @@ function createDomainTabItem(tab, groupCard) {
   info.appendChild(title);
   info.appendChild(url);
 
-  const pinBtn = document.createElement('button');
-  pinBtn.className = 'pin-home-btn';
-  pinBtn.textContent = '\u{1F3E0}'; // House emoji
-  pinBtn.title = 'Add to Home Tabs';
-  pinBtn.setAttribute('aria-label', 'Add to Home Tabs');
-  pinBtn.addEventListener('click', async (e) => {
+  // Action buttons container
+  const actions = document.createElement('div');
+  actions.className = 'tab-item-actions';
+
+  // Vault button - save tab to vault and close it
+  const vaultBtn = document.createElement('button');
+  vaultBtn.className = 'tab-action-btn vault-btn';
+  vaultBtn.textContent = '\u{1F4E5}'; // Inbox tray icon
+  vaultBtn.title = 'Vault this tab (save and close)';
+  vaultBtn.setAttribute('aria-label', 'Vault this tab');
+  vaultBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await vaultSingleTab(tab);
+  });
+
+  // Close button - close tab without vaulting
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'tab-action-btn close-btn';
+  closeBtn.textContent = '\u{2715}'; // X mark
+  closeBtn.title = 'Close tab without vaulting';
+  closeBtn.setAttribute('aria-label', 'Close tab');
+  closeBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await closeSingleTab(tab.id);
+  });
+
+  // Protect button - add to home tabs
+  const protectBtn = document.createElement('button');
+  protectBtn.className = 'tab-action-btn protect-btn-icon';
+  protectBtn.textContent = '\u{1F6E1}'; // Shield icon
+  protectBtn.title = 'Protect from shutdown (add to Home Tabs)';
+  protectBtn.setAttribute('aria-label', 'Add to Home Tabs');
+  protectBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     await addTabToHome(tab.url);
   });
 
+  actions.appendChild(vaultBtn);
+  actions.appendChild(closeBtn);
+  actions.appendChild(protectBtn);
+
   item.appendChild(checkbox);
   item.appendChild(favicon);
   item.appendChild(info);
-  item.appendChild(pinBtn);
+  item.appendChild(actions);
 
-  // Click on row toggles checkbox (except on buttons)
-  item.addEventListener('click', (e) => {
-    if (e.target !== checkbox && !e.target.closest('button')) {
-      checkbox.checked = !checkbox.checked;
-      checkbox.dispatchEvent(new Event('change'));
-    }
+  // Click on row navigates to tab (except on checkbox or buttons)
+  item.addEventListener('click', async (e) => {
+    if (e.target === checkbox || e.target.closest('button')) return;
+    await navigateToTab(tab.id);
   });
 
   return item;
@@ -503,6 +771,38 @@ async function addTabToHome(tabUrl) {
   updateSelectedCount();
 }
 
+// Vault a single tab (save to vault and close)
+async function vaultSingleTab(tab) {
+  const domain = getDomainFromUrl(tab.url) || 'Other';
+  const response = await chrome.runtime.sendMessage({
+    action: 'shutdown-tabs',
+    tabIds: [tab.id],
+    groupName: domain
+  });
+
+  if (response.success) {
+    showToast('Tab vaulted', 'success');
+    await updateLiveTabCount();
+    await renderLiveTabsPanel();
+    updateSelectedCount();
+  } else {
+    showToast('Error: ' + (response.error || 'Unknown error'), 'error');
+  }
+}
+
+// Close a single tab without vaulting
+async function closeSingleTab(tabId) {
+  try {
+    await chrome.tabs.remove(tabId);
+    showToast('Tab closed', 'info');
+    await updateLiveTabCount();
+    await renderLiveTabsPanel();
+    updateSelectedCount();
+  } catch (error) {
+    showToast('Error closing tab', 'error');
+  }
+}
+
 // Check and show onboarding tips
 async function checkOnboarding() {
   const onboardingComplete = await Settings.getSetting('onboardingComplete');
@@ -522,7 +822,7 @@ function showOnboardingTip() {
 
   const title = document.createElement('div');
   title.className = 'onboarding-title';
-  title.textContent = 'Welcome to Tab Vault!';
+  title.textContent = 'Welcome to Tab Goblin!';
 
   const text = document.createElement('div');
   text.className = 'onboarding-text';
@@ -573,7 +873,17 @@ function createGroupCard(group) {
   card.className = 'group-card';
   card.dataset.groupId = group.id;
 
-  // Make the group a drop target for drag-and-drop
+  // Restore expanded state if previously expanded
+  if (expandedVaultGroups.has(group.id)) {
+    card.classList.add('expanded');
+  }
+
+  // Make the group draggable for reordering
+  card.draggable = true;
+  card.addEventListener('dragstart', handleGroupReorderDragStart);
+  card.addEventListener('dragend', handleGroupReorderDragEnd);
+
+  // Make the group a drop target for drag-and-drop (both tabs and groups)
   card.addEventListener('dragover', handleGroupDragOver);
   card.addEventListener('dragleave', handleGroupDragLeave);
   card.addEventListener('drop', handleGroupDrop);
@@ -581,6 +891,12 @@ function createGroupCard(group) {
   // Group header
   const header = document.createElement('div');
   header.className = 'group-header';
+
+  // Drag handle
+  const dragHandle = document.createElement('span');
+  dragHandle.className = 'group-drag-handle';
+  dragHandle.textContent = '\u2630'; // Hamburger menu icon
+  dragHandle.title = 'Drag to reorder';
 
   const expand = document.createElement('span');
   expand.className = 'group-expand';
@@ -633,13 +949,20 @@ function createGroupCard(group) {
   actions.appendChild(copyBtn);
   actions.appendChild(menuBtn);
 
+  header.appendChild(dragHandle);
   header.appendChild(expand);
   header.appendChild(info);
   header.appendChild(actions);
 
   header.addEventListener('click', (e) => {
-    if (e.target.closest('.group-actions')) return;
+    if (e.target.closest('.group-actions') || e.target.closest('.group-drag-handle')) return;
     card.classList.toggle('expanded');
+    // Track expanded state
+    if (card.classList.contains('expanded')) {
+      expandedVaultGroups.add(group.id);
+    } else {
+      expandedVaultGroups.delete(group.id);
+    }
   });
 
   // Group tabs container
@@ -664,6 +987,21 @@ function createTabItem(tab, groupId) {
   item.dataset.tabId = tab.id;
   item.dataset.groupId = groupId;
 
+  // Check if this tab is currently open
+  const openTab = findOpenTabByUrl(tab.url);
+  const isActive = !!openTab;
+
+  if (isActive) {
+    item.classList.add('active-tab');
+    item.dataset.openTabId = openTab.id;
+    item.title = 'Click to navigate to this tab';
+    item.addEventListener('click', async (e) => {
+      // Don't navigate if clicking on buttons
+      if (e.target.closest('button')) return;
+      await navigateToTab(openTab.id);
+    });
+  }
+
   // Drag-and-drop attributes for vault tabs
   item.draggable = true;
   item.addEventListener('dragstart', handleDragStart);
@@ -682,15 +1020,28 @@ function createTabItem(tab, groupId) {
   const info = document.createElement('div');
   info.className = 'tab-info';
 
+  const titleRow = document.createElement('div');
+  titleRow.className = 'tab-title-row';
+
   const title = document.createElement('div');
   title.className = 'tab-title';
   title.textContent = tab.title || 'Untitled';
+
+  titleRow.appendChild(title);
+
+  // Add active badge if tab is open
+  if (isActive) {
+    const activeBadge = document.createElement('span');
+    activeBadge.className = 'active-badge';
+    activeBadge.textContent = 'Active';
+    titleRow.appendChild(activeBadge);
+  }
 
   const url = document.createElement('div');
   url.className = 'tab-url';
   url.textContent = truncateUrl(tab.url);
 
-  info.appendChild(title);
+  info.appendChild(titleRow);
   info.appendChild(url);
 
   const actions = document.createElement('div');
@@ -733,7 +1084,7 @@ function setupEventListeners() {
   });
 
   // Shutdown all button
-  document.getElementById('shutdownAllBtn').addEventListener('click', shutdownAll);
+  document.getElementById('vaultAllBtn').addEventListener('click', shutdownAll);
 
   // Confirmation dialog buttons
   document.getElementById('confirmCancelBtn').addEventListener('click', hideConfirmDialog);
@@ -762,11 +1113,21 @@ function setupEventListeners() {
     if (e.key === 'Enter') addNewPattern();
   });
 
-  // Search functionality
-  document.getElementById('searchInput').addEventListener('input', (e) => {
+  // Theme mode selection
+  document.querySelectorAll('input[name="themeMode"]').forEach(radio => {
+    radio.addEventListener('change', handleThemeModeChange);
+  });
+
+  // Palette selection
+  document.querySelectorAll('.palette-btn').forEach(btn => {
+    btn.addEventListener('click', () => handlePaletteChange(btn.dataset.palette));
+  });
+
+  // Unified search functionality
+  document.getElementById('globalSearchInput').addEventListener('input', (e) => {
     clearTimeout(searchDebounceTimer);
     searchDebounceTimer = setTimeout(() => {
-      handleSearch(e.target.value);
+      handleGlobalSearch(e.target.value);
     }, 200);
   });
 
@@ -783,8 +1144,11 @@ function toggleHomeTabsSection() {
   const header = document.getElementById('homeTabsHeader');
   section.classList.toggle('collapsed');
 
+  // Track collapsed state
+  homeTabsCollapsed = section.classList.contains('collapsed');
+
   // Update ARIA expanded state
-  const isExpanded = !section.classList.contains('collapsed');
+  const isExpanded = !homeTabsCollapsed;
   header.setAttribute('aria-expanded', isExpanded);
 }
 
@@ -869,29 +1233,17 @@ async function vaultSelectedTabs() {
     return;
   }
 
-  const autoGroup = document.getElementById('autoGroupCheckbox').checked;
-  const groupName = document.getElementById('groupNameInput').value.trim() || 'Selected Tabs';
-
-  let response;
-  if (autoGroup) {
-    response = await chrome.runtime.sendMessage({
-      action: 'shutdown-tabs-by-domain',
-      tabIds: Array.from(selectedTabIds)
-    });
-  } else {
-    response = await chrome.runtime.sendMessage({
-      action: 'shutdown-tabs',
-      tabIds: Array.from(selectedTabIds),
-      groupName: groupName
-    });
-  }
+  // Always group by domain for selected tabs
+  const response = await chrome.runtime.sendMessage({
+    action: 'shutdown-tabs-by-domain',
+    tabIds: Array.from(selectedTabIds)
+  });
 
   if (response.success) {
     showToast(`Vaulted ${response.count} ${pluralizeTabs(response.count)}`, 'success');
     await updateLiveTabCount();
     // Refresh live tabs panel
     selectedTabIds.clear();
-    document.getElementById('groupNameInput').value = '';
     await renderLiveTabsPanel();
     updateSelectedCount();
   } else {
@@ -973,16 +1325,19 @@ async function addCurrentTabAsPattern() {
   }
 }
 
-// Handle search input
-async function handleSearch(query) {
+// Handle global search input (works for both Live and Vault panels)
+async function handleGlobalSearch(query) {
   currentSearchQuery = query.trim().toLowerCase();
 
-  if (!currentSearchQuery) {
-    await renderVaultGroups();
-    return;
+  if (currentTab === 'live') {
+    await renderLiveTabsPanel();
+  } else if (currentTab === 'vault') {
+    if (!currentSearchQuery) {
+      await renderVaultGroups();
+    } else {
+      await renderSearchResults();
+    }
   }
-
-  await renderSearchResults();
 }
 
 // Render search results
@@ -1025,7 +1380,7 @@ async function renderSearchResults() {
   clearBtn.className = 'clear-search-btn';
   clearBtn.textContent = 'Clear search';
   clearBtn.addEventListener('click', () => {
-    document.getElementById('searchInput').value = '';
+    document.getElementById('globalSearchInput').value = '';
     currentSearchQuery = '';
     renderVaultGroups();
   });
@@ -1169,7 +1524,7 @@ async function onConfirmShutdown() {
 
 // Execute the actual shutdown
 async function executeShutdownAll() {
-  const btn = document.getElementById('shutdownAllBtn');
+  const btn = document.getElementById('vaultAllBtn');
   setLoading(btn, true);
 
   const response = await chrome.runtime.sendMessage({
@@ -1282,37 +1637,8 @@ async function showGroupMenu(group, anchorEl) {
   const existingMenu = document.querySelector('.group-menu-dropdown');
   if (existingMenu) existingMenu.remove();
 
-  const vault = await VaultStorage.getVault();
-  const groupIndex = vault.groups.findIndex(g => g.id === group.id);
-
   const menu = document.createElement('div');
   menu.className = 'group-menu-dropdown';
-
-  // Move up option
-  if (groupIndex > 0) {
-    const moveUpOption = document.createElement('button');
-    moveUpOption.className = 'menu-option';
-    moveUpOption.textContent = 'Move Up';
-    moveUpOption.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      menu.remove();
-      await moveGroup(group.id, -1);
-    });
-    menu.appendChild(moveUpOption);
-  }
-
-  // Move down option
-  if (groupIndex < vault.groups.length - 1) {
-    const moveDownOption = document.createElement('button');
-    moveDownOption.className = 'menu-option';
-    moveDownOption.textContent = 'Move Down';
-    moveDownOption.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      menu.remove();
-      await moveGroup(group.id, 1);
-    });
-    menu.appendChild(moveDownOption);
-  }
 
   const renameOption = document.createElement('button');
   renameOption.className = 'menu-option';
@@ -1429,6 +1755,7 @@ function truncateUrl(url) {
 let draggedItem = null;
 let draggedTabId = null;
 let draggedGroupId = null;
+let isDraggingGroup = false; // true when dragging a whole group to reorder
 
 // Handle drag start on a tab item
 function handleDragStart(e) {
@@ -1497,7 +1824,7 @@ async function handleDrop(e) {
   await moveTabToPosition(draggedGroupId, draggedTabId, targetGroupId, targetTabId);
 }
 
-// Handle drag over a group card (for moving to a different group)
+// Handle drag over a group card (for moving tabs or reordering groups)
 function handleGroupDragOver(e) {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
@@ -1507,10 +1834,30 @@ function handleGroupDragOver(e) {
 
   const targetGroupId = card.dataset.groupId;
 
-  // Don't allow dropping in the same group (for now)
-  if (targetGroupId === draggedGroupId) return;
+  // Clear previous visual states
+  document.querySelectorAll('.drop-above, .drop-below').forEach(el => {
+    el.classList.remove('drop-above', 'drop-below');
+  });
 
-  card.classList.add('drag-over');
+  if (isDraggingGroup) {
+    // Group reordering - show drop indicator above or below
+    if (targetGroupId === draggedGroupId) return;
+
+    const rect = card.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+
+    if (e.clientY < midpoint) {
+      card.classList.add('drop-above');
+      card.classList.remove('drop-below');
+    } else {
+      card.classList.add('drop-below');
+      card.classList.remove('drop-above');
+    }
+  } else {
+    // Tab moving to group
+    if (targetGroupId === draggedGroupId) return;
+    card.classList.add('drag-over');
+  }
 }
 
 // Handle drag leave from a group card
@@ -1522,7 +1869,7 @@ function handleGroupDragLeave(e) {
   const relatedTarget = e.relatedTarget;
   if (relatedTarget && card.contains(relatedTarget)) return;
 
-  card.classList.remove('drag-over');
+  card.classList.remove('drag-over', 'drop-above', 'drop-below');
 }
 
 // Handle drop on a group card
@@ -1533,15 +1880,19 @@ async function handleGroupDrop(e) {
   if (!card) return;
 
   const targetGroupId = card.dataset.groupId;
-  card.classList.remove('drag-over');
+  const wasDropAbove = card.classList.contains('drop-above');
 
-  // Don't allow dropping in the same group
-  if (targetGroupId === draggedGroupId) {
-    return;
+  card.classList.remove('drag-over', 'drop-above', 'drop-below');
+
+  if (isDraggingGroup) {
+    // Group reordering
+    if (targetGroupId === draggedGroupId) return;
+    await reorderGroup(draggedGroupId, targetGroupId, wasDropAbove);
+  } else {
+    // Tab moving to group
+    if (targetGroupId === draggedGroupId) return;
+    await moveTabToGroup(draggedGroupId, draggedTabId, targetGroupId);
   }
-
-  // Move the tab to the end of the target group
-  await moveTabToGroup(draggedGroupId, draggedTabId, targetGroupId);
 }
 
 // Move a tab to a specific position within a group (before another tab)
@@ -1600,4 +1951,69 @@ async function moveTabToGroup(sourceGroupId, tabId, targetGroupId) {
   await VaultStorage.saveVault(vault);
   await renderVaultGroups();
   showToast('Tab moved', 'success');
+}
+
+// ============================================
+// GROUP REORDERING DRAG AND DROP
+// ============================================
+
+// Handle drag start for group reordering
+function handleGroupReorderDragStart(e) {
+  const card = e.target.closest('.group-card');
+  if (!card) return;
+
+  isDraggingGroup = true;
+  draggedItem = card;
+  draggedGroupId = card.dataset.groupId;
+
+  card.classList.add('dragging-group');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', JSON.stringify({
+    type: 'group',
+    groupId: draggedGroupId
+  }));
+}
+
+// Handle drag end for group reordering
+function handleGroupReorderDragEnd(e) {
+  if (draggedItem) {
+    draggedItem.classList.remove('dragging-group');
+  }
+
+  document.querySelectorAll('.drag-over, .drop-target, .drop-above, .drop-below').forEach(el => {
+    el.classList.remove('drag-over', 'drop-target', 'drop-above', 'drop-below');
+  });
+
+  draggedItem = null;
+  draggedTabId = null;
+  draggedGroupId = null;
+  isDraggingGroup = false;
+}
+
+// Reorder a group to a new position
+async function reorderGroup(sourceGroupId, targetGroupId, insertBefore) {
+  const vault = await VaultStorage.getVault();
+
+  const sourceIndex = vault.groups.findIndex(g => g.id === sourceGroupId);
+  const targetIndex = vault.groups.findIndex(g => g.id === targetGroupId);
+
+  if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) return;
+
+  // Remove the source group
+  const [group] = vault.groups.splice(sourceIndex, 1);
+
+  // Calculate new index (accounting for removal)
+  let newIndex = targetIndex;
+  if (sourceIndex < targetIndex) {
+    newIndex = insertBefore ? targetIndex - 1 : targetIndex;
+  } else {
+    newIndex = insertBefore ? targetIndex : targetIndex + 1;
+  }
+
+  // Insert at new position
+  vault.groups.splice(newIndex, 0, group);
+
+  await VaultStorage.saveVault(vault);
+  await renderVaultGroups();
+  showToast('Group reordered', 'success');
 }
