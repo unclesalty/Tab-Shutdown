@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tab Vault</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <h1 class="header-title">Tab Vault</h1>
+      <div class="tab-count">
+        <span id="liveTabCount">0</span> tabs open
+      </div>
+    </header>
+
+    <!-- Action Bar -->
+    <div class="action-bar">
+      <button id="shutdownAllBtn" class="btn btn-primary">
+        Shutdown All
+      </button>
+      <button id="shutdownSelectedBtn" class="btn btn-secondary">
+        Select Tabs
+      </button>
+      <button id="shutdownByDomainBtn" class="btn btn-secondary btn-icon" title="Shutdown by domain">
+        ...
+      </button>
+    </div>
+
+    <!-- Toast container for notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Default View: Vault Groups List -->
+      <div id="vaultView" class="view">
+        <div class="search-container">
+          <input type="text" id="searchInput" placeholder="Search vaulted tabs..." />
+        </div>
+        <div id="vaultGroups" class="vault-groups">
+          <p class="empty-state">Your vault is empty. Shutdown some tabs to get started!</p>
+        </div>
+      </div>
+
+      <!-- Select Tabs View -->
+      <div id="selectTabsView" class="view hidden">
+        <div class="select-tabs-header">
+          <button id="backToVaultBtn" class="btn-link">&larr; Back</button>
+          <span class="select-tabs-title">Select tabs to vault</span>
+        </div>
+        <div class="group-name-input">
+          <input type="text" id="groupNameInput" placeholder="Group name (optional)" />
+          <label class="auto-group-label">
+            <input type="checkbox" id="autoGroupCheckbox" />
+            Auto-group by domain
+          </label>
+        </div>
+        <div id="liveTabsList" class="live-tabs-list"></div>
+        <div class="select-tabs-footer">
+          <span id="selectedCount">0 selected</span>
+          <button id="confirmShutdownBtn" class="btn btn-primary">Shutdown Selected</button>
+        </div>
+      </div>
+
+      <!-- Settings View -->
+      <div id="settingsView" class="view hidden">
+        <div class="settings-header">
+          <button id="backFromSettingsBtn" class="btn-link">&larr; Back</button>
+          <span class="settings-title">Home Tab Patterns</span>
+        </div>
+        <div id="homePatternsContainer" class="home-patterns-container"></div>
+        <div class="add-pattern-form">
+          <input type="text" id="newPatternInput" placeholder="e.g., *://mail.google.com/*" />
+          <button id="addPatternBtn" class="btn btn-secondary btn-small">Add</button>
+        </div>
+        <button id="addCurrentTabBtn" class="btn btn-secondary add-current-btn">Add Current Tab</button>
+      </div>
+
+      <!-- Domain View -->
+      <div id="domainView" class="view hidden">
+        <div class="domain-header">
+          <button id="backFromDomainBtn" class="btn-link">&larr; Back</button>
+          <span class="domain-title">Shutdown by Domain</span>
+        </div>
+        <div id="domainList" class="domain-list"></div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <button id="settingsBtn" class="btn-link">Settings</button>
+    </footer>
+  </div>
+
+  <script src="../common/storage.js"></script>
+  <script src="../common/home-tabs.js"></script>
+  <script src="../common/settings.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
