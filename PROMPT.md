@@ -1,90 +1,99 @@
-# PROMPT: Tab Goblin v3
+# PROMPT: Tab Goblin v6
 
 ## Role
 
-You are implementing **Tab Goblin v3**, upgrading the Chrome extension with a theme system, bug fixes, and rebranding. Work through the tickets in `TICKETS.md` sequentially, one at a time.
+You are implementing **Tab Goblin v6**, adding import/export functionality and keyboard shortcut support. Work through the tickets in `TICKETS.md` sequentially, one at a time.
 
 ## Context
 
-**v2 is complete.** The extension has working:
+**v5 is complete.** The extension has working:
 - Side panel UI with tab-based navigation
 - Vault storage and retrieval
 - Shutdown (vault) and restore operations
 - Home tab protection with patterns
+- History with duplicate prevention
 - Search functionality
-- Keyboard shortcuts
-- Group management (rename, delete, reorder)
+- Keyboard navigation and accessibility
+- 5 dark themes and 5 light themes
+- Icon buttons for vault items and groups
+- Copy to clipboard functionality
 - Drag-and-drop between vault groups
 
-**v3 focuses on:**
-- Fixing Live Tabs panel bug (tabs not displaying)
-- Rebranding from "Tab Vault" to "Tab Goblin"
-- Removing emoji characters from UI
-- Simplifying header design
-- Adding theme system (light/dark/system/custom)
-- Implementing 5 dark theme palettes
+**v6 focuses on:**
+- Import/Export in Netscape Bookmark HTML format (Chrome-compatible)
+- Keyboard shortcut to toggle side panel (Ctrl/Cmd+Shift+G)
+- OS-specific shortcut display in Settings
+- Link to Chrome shortcut configuration
 
 ## References
 
-- **PRD.md** — Product requirements for v3
-- **TICKETS.md** — Implementation tickets (TG3-001 to TG3-011)
-- **archive/** — Completed v1/v2 documents
-- **images_context_input/palettes.html** — Theme color reference
-- **images_context_input/live_tabs_panel_blank.png** — Bug screenshot
-
+- **PRD.md** — Product requirements for v6
+- **TICKETS.md** — Implementation tickets (TG6-001 to TG6-015)
+- **archive/** — Completed v1-v5 documents
 
 ## Technical Context
 
 - Use Context7 to get technical documentation
 - Use websearch as a fallback if Context7 returns no results
 
-### Theme System Architecture
+### Netscape Bookmark Format
 
-**CSS Custom Properties:**
-```css
-:root {
-  --bg: #ffffff;
-  --bg-surface: #f9f9f9;
-  --primary: #4A90D9;
-  --accent: #4A90D9;
-  --text: #333333;
-  --text-secondary: #666666;
-  /* ... */
-}
+```html
+<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Tab Goblin Export</TITLE>
+<H1>Tab Goblin Export</H1>
+<DL><p>
+    <DT><H3 ADD_DATE="1708646400">Group Name</H3>
+    <DL><p>
+        <DT><A HREF="https://example.com" ADD_DATE="1708646400">Page Title</A>
+    </DL><p>
+</DL><p>
+```
 
-[data-theme="midnight-glass"] {
-  --bg: #0f172a;
-  --bg-surface: #1e293b;
-  --primary: #0ea5e9;
-  /* ... */
+**Key Points:**
+- `ADD_DATE` is Unix timestamp (seconds since 1970)
+- Folders use `<DT><H3>` followed by `<DL><p>`
+- Bookmarks use `<DT><A HREF="...">`
+- Nested folders should be flattened: "Parent > Child"
+
+### Chrome Commands API
+
+```json
+{
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+G",
+        "mac": "Command+Shift+G"
+      },
+      "description": "Open Tab Goblin"
+    }
+  }
 }
 ```
 
-**Theme Modes:**
-- `system` — No data-theme attribute, uses CSS media query
-- `light` — data-theme="light" (or no attribute)
-- `dark` — data-theme with selected palette
-- `custom` — data-theme with selected palette
+**Key Points:**
+- `_execute_action` triggers the extension action (opens side panel)
+- `chrome.commands.getAll()` returns current configured shortcuts
+- Users configure shortcuts at `chrome://extensions/shortcuts`
+- Open shortcuts page: `chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })`
 
-### Bug Investigation
+### OS Detection
 
-The Live Tabs bug likely stems from:
 ```javascript
-function isSkippableUrl(url) {
-  return !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://');
-}
+const isMac = navigator.platform.toLowerCase().includes('mac');
+const modifier = isMac ? 'Cmd' : 'Ctrl';
 ```
-
-If `tab.url` is undefined, ALL tabs are filtered out.
 
 ## Workflow
 
-1. Read `TICKETS.md` to see all v3 tickets.
+1. Read `TICKETS.md` to see all v6 tickets.
 2. Pick the next incomplete ticket (lowest number not done).
 3. Implement the ticket fully.
 4. Use Context7 (`resolve-library-id` and `query-docs`) to look up Chrome Extension APIs when needed.
 5. Verify the **Completion Promise** is met.
-6. Mark the ticket as done: `## [DONE] TG3-001: ...`
+6. Mark the ticket as done: `### TG6-001: ... [DONE]`
 7. Move to the next ticket.
 
 ## Rules
@@ -96,6 +105,7 @@ If `tab.url` is undefined, ALL tabs are filtered out.
 - Keep code simple. Vanilla HTML/CSS/JS. No frameworks.
 - Test your work against the completion promise before marking done.
 - All colors must use CSS custom properties (no hardcoded values).
+- No emojis in UI (use Unicode symbols or text).
 
 ## Code Quality Standards
 
@@ -105,13 +115,14 @@ If `tab.url` is undefined, ALL tabs are filtered out.
 - **Input validation** — Validate user input and message parameters
 - **CSS variables** — All colors via custom properties
 - **Accessibility** — Maintain WCAG AA contrast (4.5:1 minimum)
+- **HTML escaping** — Escape user content when generating HTML for export
 
 ## Completion Signal
 
 When all tickets in `TICKETS.md` are marked `[DONE]`, output:
 
 ```
-Tab_Goblin_v3_Complete!
+Goblin_v6_Import_Export_Complete!
 ```
 
 Then proceed to the **Final Review Phase**.
@@ -126,27 +137,26 @@ Run `/code-simplifier` to refine the codebase.
 ### Step 2: Code Review
 Run `/code-review` on the implementation.
 
-### Step 4: Security Review
+### Step 3: Security Review
 Run `/security-review`
 
-### Step 3: Theme Audit
-- Verify all 5 dark themes render correctly
-- Verify system mode follows OS preference
-- Verify no hardcoded colors remain
-- Check contrast ratios in all themes
+### Step 4: Import/Export Verification
+- Export vault with multiple groups
+- Verify HTML file structure is valid
+- Import into Chrome bookmarks (should work)
+- Import back into Tab Goblin (round-trip)
+- Import Chrome bookmark export (cross-browser)
 
-### Step 4: Bug Verification
-- Confirm Live Tabs displays tabs correctly
-- Test with various tab counts and types
+### Step 5: Shortcut Verification
+- Verify Ctrl/Cmd+Shift+G toggles side panel
+- Verify Settings displays current shortcut
+- Verify "Configure" link opens Chrome shortcuts
+- Customize shortcut, verify Settings updates
 
-### Step 5: Branding Check
-- Verify all "Tab Goblin" references
-- Confirm no "Tab Vault" text remains
-- Check no emojis in UI
-
-### Step 6: Accessibility Audit
-- Run Chrome DevTools accessibility audit
-- Verify keyboard navigation
-- Check focus visibility in all themes
+### Step 6: Regression Testing
+- Verify all existing vault operations work
+- Verify themes work (light and dark)
+- Verify home tab protection works
+- Verify history works
 
 Once all review steps pass, the loop is complete.
