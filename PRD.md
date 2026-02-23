@@ -1,190 +1,338 @@
-# PRD: Tab Goblin v5 — Bug Fixes and UI Polish
+# PRD: Tab Goblin v6 — Import/Export and Keyboard Shortcuts
 
 ## Overview
 
 **Tab Goblin** is a Chrome extension that solves RAM/CPU drain from too many tabs while preserving them as workflow aids. Tabs are either live (open) or vaulted (fully closed and saved). No suspension, no halfway — closed is closed.
 
-## v5 Goals
+## v6 Goals
 
-This release focuses on **bug fixes**, **UI polish**, and **UX consistency**. Addressing user-reported issues and refining the interface for a smoother experience.
+This release adds **data portability** and **keyboard accessibility**:
 
-1. **Fix Home Tab Bugs** — Manual close handling, pattern cleanup on removal
-2. **Fix History Behavior** — Duplicate prevention, proper accordion behavior
-3. **Fix Vault UI** — Icon buttons, proper copy behavior, drag-and-drop reflection
-4. **Add Light Mode Themes** — 5 light palettes matching the dark themes
-5. **Remove Deprecated UI** — Edit Patterns section from Live Tabs, Move Up/Down buttons
+1. **Import/Export** — Backup vaults to file and restore them; import Chrome bookmarks into vault
+2. **Keyboard Shortcut** — Hotkey to toggle the side panel open/closed with OS-specific display
 
 ---
 
 ## Problem Statement
 
-Users have reported several bugs and UX inconsistencies:
+**Data Portability:**
+- Users cannot backup their vault data
+- Users cannot transfer vaults between machines or Chrome profiles
+- Users with existing bookmarks cannot easily migrate to Tab Goblin
+- No way to share vault groups with others
 
-- **Home Tab Issues**: Manually closing a home tab doesn't behave correctly; removing a home tab doesn't clear its pattern
-- **History Issues**: Restored tabs re-enter history when closed; duplicates accumulate; wrong default expand state
-- **Vault UI Issues**: Copy button opens tabs instead of copying to clipboard; drag-and-drop shows success but doesn't update UI; text buttons feel cluttered
-- **Theme Parity**: Dark mode has 5 theme options, light mode has none
-- **Redundant UI**: Edit Patterns exists on Settings page but also clutters Live Tabs
-
----
-
-## Requirements
-
-### Category 1: Home Tab Fixes
-
-#### 1.1 Manual Home Tab Close Handling
-**Current**: When a home tab is manually closed, behavior is inconsistent
-**Expected**: Home tabs can be manually closed by the user without special handling — they should close normally like any other tab, but NOT be vaulted (they are protected from "Vault All" operations, not from manual close)
-
-#### 1.2 Home Tab Pattern Cleanup
-**Current**: When a home tab is removed from the Home Tab section, its pattern remains in storage
-**Expected**: Removing a home tab from the UI should also remove its pattern from `HomeTabStorage`
+**Keyboard Accessibility:**
+- Power users want to open Tab Goblin without clicking the toolbar icon
+- No keyboard shortcut exists to toggle the side panel
+- Users don't know how to configure Chrome extension shortcuts
 
 ---
 
-### Category 2: History Behavior Fixes
+## Feature 1: Import/Export
 
-#### 2.1 Prevent Restored Tabs from Re-entering History
-**Current**: When a vault item is restored and then the tab is closed, it re-enters history as a new entry
-**Expected**: When a tab is closed, check if its URL matches an existing vault item. If so, do NOT add to history.
+### 1.1 Export Format
 
-#### 2.2 Prevent Duplicate History Entries
-**Current**: Multiple entries for the same URL can accumulate in history
-**Expected**: Before adding to history, check if URL already exists. If so, skip or update timestamp.
+**Requirement:** Export vault data in Netscape Bookmark HTML format (same as Chrome bookmark export).
 
-#### 2.3 History Collapsed by Default
-**Current**: History section may be expanded by default
-**Expected**: History section should be COLLAPSED by default
+**Format Specification:**
+```html
+<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Tab Goblin Export</TITLE>
+<H1>Tab Goblin Export</H1>
+<DL><p>
+    <DT><H3 ADD_DATE="1708646400" LAST_MODIFIED="1708646400">Group Name</H3>
+    <DL><p>
+        <DT><A HREF="https://example.com" ADD_DATE="1708646400">Page Title</A>
+    </DL><p>
+</DL><p>
+```
 
-#### 2.4 History Position and Direction
-**Current**: History position may vary
-**Expected**: History should be at the BOTTOM of the Vault tab, and should accordion UPWARDS when expanded
+**Key Points:**
+- Each vault group becomes a folder (`<H3>`)
+- Each tab becomes a bookmark (`<A HREF>`)
+- `ADD_DATE` uses Unix timestamp (seconds since 1970)
+- File downloads as `tab-goblin-export-YYYY-MM-DD.html`
 
----
+### 1.2 Export UI
 
-### Category 3: Vault UI Improvements
+**Location:** Settings tab, new "Data" section
 
-#### 3.1 Icon Buttons for Individual Vault Items
-**Current**: Individual vault items use text buttons (Restore, Copy, Delete)
-**Expected**: Use icon buttons:
-- Restore: ↗ or similar "open" icon
-- Copy: 📋 or clipboard icon (Unicode, no emoji)
-- Delete: ✕ or trash icon
+**Elements:**
+- "Export Vault" button
+- Brief description: "Download your vault as a bookmark file"
 
-#### 3.2 Icon Buttons for Vault Groups
-**Current**: Vault groups use text buttons
-**Expected**: Use icon buttons for:
-- Restore (all in group)
-- Rename (group name)
-- Copy (all URLs in group)
-- Delete (entire group)
+**Behavior:**
+- Click triggers file download
+- Includes all vault groups and tabs
+- Does NOT include history (history is ephemeral)
+- Shows toast: "Vault exported successfully"
 
-#### 3.3 Remove Move Up/Down Buttons
-**Current**: Vault groups have Move Up and Move Down buttons in menu
-**Expected**: Remove these buttons entirely — drag-and-drop is sufficient for reordering
+### 1.3 Import Format
 
-#### 3.4 Fix Copy Button Behavior
-**Current**: Copy button opens tabs (same as Restore)
-**Expected**: Copy button should:
-- For individual item: Copy the URL to clipboard
-- For group: Copy all URLs (newline-separated) to clipboard
-- Show visual confirmation (toast: "Copied to clipboard" or similar)
-- NOT open any tabs
+**Requirement:** Import Netscape Bookmark HTML format (Chrome/Firefox/Edge bookmark exports).
 
-#### 3.5 Fix Drag-and-Drop Visual Update
-**Current**: Dragging items between vault sections shows success alert but UI doesn't reflect the change
-**Expected**: After successful drag-and-drop:
-- Update storage
-- Re-render affected sections immediately
-- Show success feedback only after UI updates
+**Supported Sources:**
+- Chrome bookmark export
+- Firefox bookmark export
+- Edge bookmark export
+- Tab Goblin export (round-trip)
 
----
+### 1.4 Import UI
 
-### Category 4: Light Mode Themes
+**Location:** Settings tab, "Data" section (below Export)
 
-#### 4.1 Add 5 Light Theme Palettes
-**Current**: Dark mode has 5 theme options (Midnight Glass, Neon Ember, Soft Lavender, Arctic Mint, Slate Minimal); Light mode has no palette options
-**Expected**: Add 5 light theme palettes as companions to the dark themes:
+**Elements:**
+- "Import Bookmarks" button
+- File picker (accepts `.html` files)
+- Brief description: "Import bookmarks or a previous Tab Goblin export"
 
-| Dark Theme | Light Companion | Primary Color |
-|------------|-----------------|---------------|
-| Midnight Glass | Daylight Glass | #0284C7 (sky blue) |
-| Neon Ember | Warm Sand | #EA580C (terracotta) |
-| Soft Lavender | Morning Lilac | #7C3AED (violet) |
-| Arctic Mint | Spring Mint | #059669 (emerald) |
-| Slate Minimal | Clean Slate | #4F46E5 (indigo) |
+**Behavior:**
+- Opens file picker on click
+- Parses Netscape Bookmark HTML format
+- Each top-level folder becomes a vault group
+- Bookmarks without folders go into "Imported Bookmarks" group
+- Shows confirmation dialog: "Import X groups with Y tabs?"
+- On confirm: adds groups to vault, shows toast: "Imported X groups"
+- Does NOT replace existing vault (additive import)
 
-**Color Reference**: See `images_context_input/palettes-light.html` for full specifications
+### 1.5 Import Conflict Handling
 
-#### 4.2 Theme UI Parity
-**Current**: Selecting Dark mode shows theme palette options; selecting Light mode shows nothing
-**Expected**: Selecting Light mode should show the 5 light theme palettes using the SAME UI component as dark mode (reuse existing code)
+**Duplicate URLs:**
+- If imported URL already exists in vault, skip it
+- Count skipped duplicates and report: "Imported X tabs (Y duplicates skipped)"
 
----
+**Empty Groups:**
+- Skip folders with no bookmarks
+- Skip separator items (`<HR>`)
 
-### Category 5: Remove Deprecated UI
-
-#### 5.1 Remove Edit Patterns from Live Tabs
-**Current**: Live Tabs panel has an "Edit Patterns" link/section
-**Expected**: Remove the Edit Patterns link and section entirely from Live Tabs. This functionality exists on the Settings page and the link only navigates there anyway.
+**Nested Folders:**
+- Flatten nested structure (Tab Goblin has flat groups)
+- Nested folder names become: "Parent > Child"
 
 ---
 
-## Non-Goals (v5)
+## Feature 2: Keyboard Shortcut
 
-- New features beyond bug fixes
-- Export/import functionality
-- Cross-device sync
-- Additional dark themes
-- Breaking API changes
+### 2.1 Default Shortcut
+
+**Requirement:** Provide a suggested keyboard shortcut to toggle the side panel.
+
+**Implementation:**
+- Use Chrome's `commands` API with `_execute_action`
+- Suggested shortcut: `Ctrl+Shift+G` (Windows/Linux), `Command+Shift+G` (macOS)
+- "G" for "Goblin"
+
+**Manifest Addition:**
+```json
+{
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+G",
+        "mac": "Command+Shift+G"
+      },
+      "description": "Open Tab Goblin"
+    }
+  }
+}
+```
+
+### 2.2 Display Current Shortcut
+
+**Location:** Settings tab, new "Keyboard Shortcut" section
+
+**Elements:**
+- Section header: "Keyboard Shortcut"
+- Current shortcut display (OS-specific formatting)
+- Link/button to Chrome's shortcut settings
+
+**OS-Specific Display:**
+- macOS: Show `Cmd` symbol or text (detect via `navigator.platform`)
+- Windows/Linux: Show `Ctrl`
+
+**Dynamic Shortcut Reading:**
+- Use `chrome.commands.getAll()` to read actual configured shortcut
+- Display whatever the user has configured (may differ from suggested)
+- If no shortcut configured, show "Not set"
+
+### 2.3 Shortcut Configuration Instructions
+
+**Requirement:** Help users configure or change the keyboard shortcut.
+
+**UI Elements:**
+- "Configure Shortcut" link/button
+- Opens `chrome://extensions/shortcuts` in new tab
+- Brief instruction text: "Click to customize in Chrome settings"
+
+**Note:** Extensions cannot programmatically open `chrome://` URLs directly. Use `chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })` which works from the extension context.
+
+### 2.4 Shortcut Enable/Disable Toggle
+
+**Requirement:** Allow users to disable the keyboard shortcut from the extension.
+
+**Implementation Options:**
+
+**Option A: Remove from manifest (not recommended)**
+- Cannot dynamically modify manifest
+
+**Option B: Inform user to clear shortcut (recommended)**
+- Display instructions: "To disable, clear the shortcut in Chrome settings"
+- Provide direct link to `chrome://extensions/shortcuts`
+
+**Decision:** Option B — Chrome manages shortcuts; we display current state and link to settings.
 
 ---
 
-## Success Criteria
+## UI Specifications
 
-- [ ] Manually closing a home tab works normally (no vault)
-- [ ] Removing a home tab clears its pattern from storage
-- [ ] Restored tabs don't re-enter history when closed
-- [ ] No duplicate URLs in history
-- [ ] History is collapsed by default
-- [ ] History is at bottom of Vault, accordions upward
-- [ ] Vault items use icon buttons (Restore, Copy, Delete)
-- [ ] Vault groups use icon buttons (Restore, Rename, Copy, Delete)
-- [ ] Move Up/Down buttons removed from vault groups
-- [ ] Copy button copies URL(s) to clipboard, shows feedback
-- [ ] Drag-and-drop updates UI immediately
-- [ ] 5 light themes available when Light mode selected
-- [ ] Light/Dark theme selectors use same UI component
-- [ ] Edit Patterns removed from Live Tabs panel
-- [ ] All existing functionality preserved
+### Settings Tab Layout (Updated)
+
+```
+Settings
+─────────────────────────────
+Appearance
+  Theme Mode: [System ▼]
+  Theme Palette: [○ ○ ○ ○ ○]
+
+─────────────────────────────
+Keyboard Shortcut
+  Current: Cmd+Shift+G
+  [Configure in Chrome Settings]
+
+─────────────────────────────
+Data
+  [Export Vault]
+  Download your vault as a bookmark file
+
+  [Import Bookmarks]
+  Import bookmarks or a previous export
+
+─────────────────────────────
+Home Tabs
+  [List of home tab patterns...]
+  [Add Pattern]
+```
+
+### Import Confirmation Dialog
+
+```
+┌─────────────────────────────────┐
+│  Import Bookmarks?              │
+│                                 │
+│  Found 5 groups with 47 tabs.   │
+│                                 │
+│  This will add to your existing │
+│  vault (nothing will be         │
+│  replaced or deleted).          │
+│                                 │
+│  [Cancel]           [Import]    │
+└─────────────────────────────────┘
+```
 
 ---
 
 ## Technical Notes
 
-### Copy to Clipboard
-Use the Clipboard API:
-```javascript
-await navigator.clipboard.writeText(urlOrUrls);
-showToast('Copied to clipboard');
-```
+### Netscape Bookmark Parsing
 
-### Icon Buttons
-Use Unicode symbols (not emoji):
-- Open/Restore: ↗ (U+2197) or ⎋ (U+238B)
-- Copy: ⧉ (U+29C9) or use SVG
-- Delete: ✕ (U+2715)
-- Rename: ✎ (U+270E)
-
-### Theme Reuse
-The `getDarkThemes()` pattern should be mirrored with `getLightThemes()`:
 ```javascript
-function getLightThemes() {
-  return Object.entries(THEMES)
-    .filter(([, theme]) => theme.type === 'light')
-    .map(([key, theme]) => ({ key, ...theme }));
+function parseNetscapeBookmarks(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const groups = [];
+
+  // Find all DT elements (folders and bookmarks)
+  const dts = doc.querySelectorAll('DT');
+  // Parse folder structure...
+
+  return groups;
 }
 ```
+
+### Netscape Bookmark Generation
+
+```javascript
+function generateNetscapeBookmarks(vault) {
+  const timestamp = Math.floor(Date.now() / 1000);
+  let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Tab Goblin Export</TITLE>
+<H1>Tab Goblin Export</H1>
+<DL><p>
+`;
+
+  for (const group of vault.groups) {
+    html += `    <DT><H3 ADD_DATE="${timestamp}">${escapeHtml(group.name)}</H3>\n`;
+    html += `    <DL><p>\n`;
+    for (const tab of group.tabs) {
+      const addDate = Math.floor(tab.vaultedAt / 1000);
+      html += `        <DT><A HREF="${escapeHtml(tab.url)}" ADD_DATE="${addDate}">${escapeHtml(tab.title)}</A>\n`;
+    }
+    html += `    </DL><p>\n`;
+  }
+
+  html += `</DL><p>`;
+  return html;
+}
+```
+
+### OS Detection for Shortcut Display
+
+```javascript
+function getModifierKey() {
+  const platform = navigator.platform.toLowerCase();
+  if (platform.includes('mac')) {
+    return 'Cmd';  // or '⌘' for symbol
+  }
+  return 'Ctrl';
+}
+
+function formatShortcut(shortcut) {
+  // shortcut from chrome.commands.getAll() e.g., "Ctrl+Shift+G"
+  const modifier = getModifierKey();
+  return shortcut.replace(/Ctrl|Command/gi, modifier);
+}
+```
+
+### Reading Current Shortcut
+
+```javascript
+async function getCurrentShortcut() {
+  const commands = await chrome.commands.getAll();
+  const actionCommand = commands.find(cmd => cmd.name === '_execute_action');
+  return actionCommand?.shortcut || null;
+}
+```
+
+---
+
+## Non-Goals (v6)
+
+- Cloud sync (backup to Google Drive, etc.)
+- Scheduled automatic backups
+- Import from other formats (JSON, CSV)
+- Export individual groups (export all or nothing)
+- Custom shortcut configuration within extension (use Chrome's UI)
+- Multiple shortcut bindings
+
+---
+
+## Success Criteria
+
+- [ ] Export button downloads valid Netscape Bookmark HTML file
+- [ ] Exported file can be imported into Chrome bookmarks
+- [ ] Import parses Chrome bookmark exports correctly
+- [ ] Import parses Tab Goblin exports correctly (round-trip)
+- [ ] Import shows confirmation dialog with counts
+- [ ] Import adds groups without replacing existing vault
+- [ ] Duplicate URLs are skipped during import
+- [ ] Keyboard shortcut section appears in Settings
+- [ ] Current shortcut is displayed with OS-appropriate modifier
+- [ ] "Not set" shown when no shortcut configured
+- [ ] Configure link opens Chrome shortcuts page
+- [ ] Default shortcut (Ctrl/Cmd+Shift+G) works after install
+- [ ] Shortcut toggles side panel open/closed
 
 ---
 
@@ -193,20 +341,23 @@ function getLightThemes() {
 ```
 src/
 ├── common/
-│   ├── themes.js        # Add light theme definitions
-│   └── home-tabs.js     # Fix pattern cleanup on removal
+│   ├── import-export.js    # NEW: Import/export functions
+│   └── storage.js          # May need bulk import helper
 ├── sidepanel/
-│   ├── sidepanel.js     # Fix copy, drag-drop, history, home tabs, remove edit patterns
-│   └── sidepanel.css    # Add light theme CSS, icon button styles
+│   ├── sidepanel.js        # Settings UI updates
+│   └── sidepanel.css       # New section styles
 └── background/
-    └── service-worker.js # History duplicate prevention, home tab close handling
+    └── service-worker.js   # File download handling (if needed)
+
+manifest.json               # Add commands section
 ```
 
 ---
 
 ## References
 
-- **Light Palette Specs**: `images_context_input/palettes-light.html`
-- **Code Review**: `context_items/opus-cursor-review.md`
-- **v4 PRD (archived)**: `archive/PRD-v4-2026-02-22.md`
-- **v4 TICKETS (archived)**: `archive/TICKETS-v4-2026-02-22.md`
+- **Chrome Commands API:** https://developer.chrome.com/docs/extensions/reference/api/commands
+- **Chrome Shortcuts UI:** `chrome://extensions/shortcuts`
+- **Netscape Bookmark Format:** http://fileformats.archiveteam.org/wiki/Netscape_bookmarks
+- **v5 PRD (archived):** `archive/PRD-v5-2026-02-22.md`
+- **v5 TICKETS (archived):** `archive/TICKETS-v5-2026-02-22.md`

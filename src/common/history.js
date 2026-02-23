@@ -4,6 +4,33 @@
 const HISTORY_KEY = 'tabHistory';
 const HISTORY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+// Concurrency lock for read-modify-write operations
+let _historyLock = null;
+
+/**
+ * Execute an operation with exclusive access to history storage
+ * Prevents race conditions in read-modify-write operations
+ * @param {Function} operation - Async function to execute
+ * @returns {Promise} Result of the operation
+ */
+async function withHistoryLock(operation) {
+  // Wait for any existing lock to release
+  while (_historyLock) {
+    await _historyLock;
+  }
+
+  // Create a new lock
+  let resolve;
+  _historyLock = new Promise(r => { resolve = r; });
+
+  try {
+    return await operation();
+  } finally {
+    resolve();
+    _historyLock = null;
+  }
+}
+
 /**
  * History schema:
  * {
@@ -18,13 +45,6 @@ const HISTORY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
  *   ]
  * }
  */
-
-/**
- * Generate a unique ID
- */
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
-}
 
 /**
  * Get history from storage, filtering out expired entries
@@ -77,54 +97,72 @@ async function saveHistory(history) {
  * @returns {Promise<Object|null>} - The added history entry, or null if duplicate
  */
 async function addToHistory(tab) {
-  const history = await getHistory();
-  const url = tab.url || '';
+  return withHistoryLock(async () => {
+    const history = await getHistory();
+    const url = tab.url || '';
 
-  // Check for duplicate URL - skip if already exists
-  const existingEntry = history.tabs.find(t => t.url === url);
-  if (existingEntry) {
-    return null; // Skip duplicate
-  }
+    // Check for duplicate URL - skip if already exists
+    const existingEntry = history.tabs.find(t => t.url === url);
+    if (existingEntry) {
+      return null; // Skip duplicate
+    }
 
-  const now = Date.now();
+    const now = Date.now();
 
-  const entry = {
-    id: generateId(),
-    url: url,
-    title: tab.title || 'Untitled',
-    favIconUrl: tab.favIconUrl || '',
-    closedAt: now
-  };
+    const entry = {
+      id: UrlUtils.generateId(),
+      url: url,
+      title: tab.title || 'Untitled',
+      favIconUrl: tab.favIconUrl || '',
+      closedAt: now
+    };
 
-  // Add to the beginning (most recent first)
-  history.tabs.unshift(entry);
+    // Add to the beginning (most recent first)
+    history.tabs.unshift(entry);
 
-  await saveHistory(history);
-  return entry;
+    await saveHistory(history);
+    return entry;
+  });
 }
 
 /**
  * Add multiple tabs to history
  * @param {Array} tabs - Array of tab objects {url, title, favIconUrl}
- * @returns {Promise<Array>} - The added history entries
+ * @returns {Promise<Array>} - The added history entries (excluding duplicates)
  */
 async function addManyToHistory(tabs) {
-  const history = await getHistory();
-  const now = Date.now();
+  return withHistoryLock(async () => {
+    const history = await getHistory();
+    const now = Date.now();
 
-  const entries = tabs.map(tab => ({
-    id: generateId(),
-    url: tab.url || '',
-    title: tab.title || 'Untitled',
-    favIconUrl: tab.favIconUrl || '',
-    closedAt: now
-  }));
+    // Build set of existing URLs for deduplication
+    const existingUrls = new Set(history.tabs.map(t => t.url));
 
-  // Add to the beginning (most recent first)
-  history.tabs.unshift(...entries);
+    const entries = [];
+    for (const tab of tabs) {
+      const url = tab.url || '';
 
-  await saveHistory(history);
-  return entries;
+      // Skip duplicates (both existing and within this batch)
+      if (existingUrls.has(url)) continue;
+      existingUrls.add(url);
+
+      entries.push({
+        id: UrlUtils.generateId(),
+        url: url,
+        title: tab.title || 'Untitled',
+        favIconUrl: tab.favIconUrl || '',
+        closedAt: now
+      });
+    }
+
+    if (entries.length > 0) {
+      // Add to the beginning (most recent first)
+      history.tabs.unshift(...entries);
+      await saveHistory(history);
+    }
+
+    return entries;
+  });
 }
 
 /**
@@ -133,15 +171,17 @@ async function addManyToHistory(tabs) {
  * @returns {Promise<boolean>} - True if removed
  */
 async function removeFromHistory(tabId) {
-  const history = await getHistory();
-  const initialLength = history.tabs.length;
-  history.tabs = history.tabs.filter(t => t.id !== tabId);
+  return withHistoryLock(async () => {
+    const history = await getHistory();
+    const initialLength = history.tabs.length;
+    history.tabs = history.tabs.filter(t => t.id !== tabId);
 
-  if (history.tabs.length < initialLength) {
-    await saveHistory(history);
-    return true;
-  }
-  return false;
+    if (history.tabs.length < initialLength) {
+      await saveHistory(history);
+      return true;
+    }
+    return false;
+  });
 }
 
 /**
@@ -150,16 +190,18 @@ async function removeFromHistory(tabId) {
  * @returns {Promise<number>} - Number of tabs removed
  */
 async function removeManyFromHistory(tabIds) {
-  const history = await getHistory();
-  const tabIdSet = new Set(tabIds);
-  const initialLength = history.tabs.length;
-  history.tabs = history.tabs.filter(t => !tabIdSet.has(t.id));
+  return withHistoryLock(async () => {
+    const history = await getHistory();
+    const tabIdSet = new Set(tabIds);
+    const initialLength = history.tabs.length;
+    history.tabs = history.tabs.filter(t => !tabIdSet.has(t.id));
 
-  const removed = initialLength - history.tabs.length;
-  if (removed > 0) {
-    await saveHistory(history);
-  }
-  return removed;
+    const removed = initialLength - history.tabs.length;
+    if (removed > 0) {
+      await saveHistory(history);
+    }
+    return removed;
+  });
 }
 
 /**
@@ -167,7 +209,9 @@ async function removeManyFromHistory(tabIds) {
  * @returns {Promise<void>}
  */
 async function clearHistory() {
-  await saveHistory({ tabs: [] });
+  return withHistoryLock(async () => {
+    await saveHistory({ tabs: [] });
+  });
 }
 
 /**

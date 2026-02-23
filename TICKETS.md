@@ -1,457 +1,439 @@
-# TICKETS: Tab Goblin v5 — Bug Fixes and UI Polish
+# TICKETS: Tab Goblin v6 — Import/Export and Keyboard Shortcuts
 
 Each ticket includes a **Completion Promise** — the concrete condition to verify the ticket is done.
 
-**Previous Version:** v4 archived at `archive/TICKETS-v4-2026-02-22.md`
+**Previous Version:** v5 archived at `archive/TICKETS-v5-2026-02-22.md`
 **PRD Reference:** `PRD.md`
 
 ---
 
-## Phase 1: Home Tab Fixes
+## Phase 1: Export Feature
 
-### TG5-001: Fix Home Tab Pattern Cleanup on Removal [DONE]
+### TG6-001: Create Import/Export Module [DONE]
+
+**Priority:** HIGH
+**PRD Reference:** Section 1.1, 1.3
+
+**Goal:** Create a shared module for import/export functionality.
+
+**Tasks:**
+- Create `src/common/import-export.js`
+- Implement `escapeHtml()` helper for safe HTML generation
+- Implement `generateNetscapeBookmarks(vault)` function
+- Implement `parseNetscapeBookmarks(html)` function
+- Handle nested folders by flattening with "Parent > Child" naming
+- Skip empty folders and `<HR>` separator elements
+- Export module for use in sidepanel
+
+**Netscape Format Structure:**
+```html
+<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Tab Goblin Export</TITLE>
+<H1>Tab Goblin Export</H1>
+<DL><p>
+    <DT><H3 ADD_DATE="timestamp">Group Name</H3>
+    <DL><p>
+        <DT><A HREF="url" ADD_DATE="timestamp">Title</A>
+    </DL><p>
+</DL><p>
+```
+
+**Files to Create:**
+- `src/common/import-export.js`
+
+**Completion Promise:** Module exports `generateNetscapeBookmarks()` and `parseNetscapeBookmarks()` functions. Both handle the Netscape Bookmark format correctly.
+
+---
+
+### TG6-002: Implement Export Vault Function [DONE]
+
+**Priority:** HIGH
+**PRD Reference:** Section 1.1, 1.2
+
+**Goal:** Generate and download vault as Netscape Bookmark HTML file.
+
+**Tasks:**
+- In `import-export.js`, implement full `generateNetscapeBookmarks()`:
+  - Convert each vault group to a folder (`<H3>`)
+  - Convert each tab to a bookmark (`<A HREF>`)
+  - Use `vaultedAt` timestamp (convert ms to seconds)
+  - Escape HTML entities in titles and URLs
+- Implement `downloadExport(vault)` function:
+  - Generate HTML content
+  - Create Blob with `text/html` type
+  - Create download link with filename `tab-goblin-export-YYYY-MM-DD.html`
+  - Trigger download
+  - Clean up object URL
+
+**Files to Modify:**
+- `src/common/import-export.js`
+
+**Completion Promise:** `downloadExport()` downloads a valid Netscape Bookmark HTML file. File can be imported into Chrome bookmarks.
+
+---
+
+### TG6-003: Add Export UI to Settings [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 1.2
 
-**Goal:** When a home tab is removed from the UI, its pattern should be removed from storage.
-
-**Background:**
-When a user adds a URL as a home tab, a pattern is stored in `HomeTabStorage`. When the home tab is removed via the UI, the pattern persists in storage, causing the URL to still match as a home tab.
+**Goal:** Add Export button to Settings tab.
 
 **Tasks:**
-- Locate the remove home tab handler in `sidepanel.js`
-- Identify where the home tab entry is removed from the UI list
-- Add call to `HomeTabStorage.removePattern(pattern)` when removing the home tab
-- Ensure the pattern being removed matches what was stored (exact URL or pattern string)
-- Test: Add home tab, remove it, close tab — should vault normally
+- Add "Data" section to Settings panel (after Appearance, before Home Tabs)
+- Add section header: "Data"
+- Add "Export Vault" button
+- Add description text: "Download your vault as a bookmark file"
+- Wire button to call `downloadExport()` with current vault
+- Show toast on success: "Vault exported successfully"
+- Handle empty vault case: show toast "Vault is empty"
 
 **Files to Modify:**
-- `src/sidepanel/sidepanel.js` (remove handler)
-- `src/common/home-tabs.js` (verify removePattern exists and works)
+- `src/sidepanel/sidepanel.js` (Settings render)
+- `src/sidepanel/sidepanel.css` (section styles if needed)
 
-**Completion Promise:** Removing a home tab from the UI also removes its pattern from storage. A previously protected URL is no longer protected after removal.
+**Completion Promise:** Settings tab shows "Data" section with "Export Vault" button. Clicking exports the vault as HTML file.
 
 ---
 
-### TG5-002: Fix Manual Home Tab Close Handling [DONE]
+## Phase 2: Import Feature
+
+### TG6-004: Implement Import Parser [DONE]
 
 **Priority:** HIGH
-**PRD Reference:** Section 1.1
+**PRD Reference:** Section 1.3, 1.5
 
-**Goal:** Manually closing a home tab should work normally — close the tab, don't vault it.
-
-**Background:**
-Home tabs are protected from "Vault All" operations. However, manually closing a home tab (clicking X) should close it normally. The tab should not be vaulted because the user explicitly closed it.
+**Goal:** Parse Netscape Bookmark HTML into vault group structure.
 
 **Tasks:**
-- Review `service-worker.js` tab close handler
-- Verify home tabs are identified correctly
-- Ensure manual close (single tab close) does NOT vault home tabs
-- Ensure "Vault All" still skips home tabs
-- Test: Open home tab, manually close — should close without vaulting
+- Implement `parseNetscapeBookmarks(html)`:
+  - Use DOMParser to parse HTML
+  - Find folder headers (`<DT><H3>`)
+  - Find bookmarks (`<DT><A>`)
+  - Build groups array with tabs
+  - Handle nested folders: flatten with "Parent > Child" naming
+  - Skip empty folders (no bookmarks)
+  - Skip separator elements (`<HR>`)
+  - Handle bookmarks without folder: create "Imported Bookmarks" group
+- Return structure: `{ groups: [{ name, tabs: [{ url, title }] }] }`
+
+**Edge Cases:**
+- Chrome Bookmarks Bar, Other Bookmarks folders
+- Firefox toolbar, menu, unsorted bookmarks
+- Deeply nested folders (3+ levels)
+- Empty file or invalid HTML
 
 **Files to Modify:**
-- `src/background/service-worker.js` (tab close handler)
+- `src/common/import-export.js`
 
-**Completion Promise:** Manually closing a home tab closes it normally. The tab does not appear in vault. "Vault All" still correctly skips home tabs.
+**Completion Promise:** `parseNetscapeBookmarks()` correctly parses Chrome, Firefox, and Edge bookmark exports. Returns flat group structure.
 
 ---
 
-## Phase 2: History Behavior Fixes
+### TG6-005: Implement Import to Vault [DONE]
 
-### TG5-003: Prevent Restored Tabs from Re-entering History [DONE]
+**Priority:** HIGH
+**PRD Reference:** Section 1.4, 1.5
+
+**Goal:** Add parsed bookmark groups to vault storage.
+
+**Tasks:**
+- Implement `importToVault(parsedGroups)`:
+  - Get existing vault URLs for deduplication
+  - For each group:
+    - Filter out tabs with URLs already in vault
+    - Skip group if all tabs are duplicates
+    - Add group via `VaultStorage.addGroup()`
+  - Return stats: `{ groupsAdded, tabsAdded, duplicatesSkipped }`
+- Add helper to `storage.js` if needed: `VaultStorage.getAllUrls()`
+
+**Files to Modify:**
+- `src/common/import-export.js`
+- `src/common/storage.js` (if helper needed)
+
+**Completion Promise:** `importToVault()` adds groups to vault. Duplicate URLs are skipped. Returns accurate counts.
+
+---
+
+### TG6-006: Add Import UI to Settings [DONE]
+
+**Priority:** HIGH
+**PRD Reference:** Section 1.4
+
+**Goal:** Add Import button and file picker to Settings tab.
+
+**Tasks:**
+- Add "Import Bookmarks" button to Data section (below Export)
+- Add description: "Import bookmarks or a previous export"
+- Create hidden file input (`accept=".html"`)
+- Wire button to trigger file input click
+- On file selected:
+  - Read file contents
+  - Parse with `parseNetscapeBookmarks()`
+  - Show confirmation dialog with counts
+  - On confirm: call `importToVault()`
+  - Show success toast with stats
+  - Refresh vault display
+
+**Confirmation Dialog Content:**
+```
+Import Bookmarks?
+
+Found X groups with Y tabs.
+
+This will add to your existing vault
+(nothing will be replaced or deleted).
+
+[Cancel] [Import]
+```
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js`
+- `src/sidepanel/sidepanel.css` (dialog styles if needed)
+
+**Completion Promise:** Import button opens file picker. Selecting valid HTML shows confirmation dialog. Confirming imports to vault with toast feedback.
+
+---
+
+### TG6-007: Import Error Handling [DONE]
+
+**Priority:** MEDIUM
+**PRD Reference:** Section 1.5
+
+**Goal:** Handle import errors gracefully.
+
+**Tasks:**
+- Handle invalid/corrupt HTML file
+- Handle file with no bookmarks
+- Handle file read errors
+- Show appropriate error toasts:
+  - "Invalid bookmark file"
+  - "No bookmarks found in file"
+  - "Failed to read file"
+- Log errors to console for debugging
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (error handling)
+- `src/common/import-export.js` (validation)
+
+**Completion Promise:** Invalid files show appropriate error messages. No crashes or unhandled exceptions.
+
+---
+
+## Phase 3: Keyboard Shortcut
+
+### TG6-008: Add Commands to Manifest [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 2.1
 
-**Goal:** Tabs that match existing vault items should not be added to history when closed.
-
-**Background:**
-When a vault item is restored, then closed, it re-enters history as a duplicate. This defeats the purpose of the vault — items persist across close/open cycles.
+**Goal:** Define keyboard shortcut in manifest.json.
 
 **Tasks:**
-- In tab close handler, before adding to history:
-  - Get all vault group URLs
-  - Check if closed tab URL exists in any vault group
-  - If match found, skip history addition
-- Consider: Should we match exact URL or normalized URL?
-- Test: Restore vault item, close tab — should NOT appear in history
+- Add `commands` section to manifest.json
+- Define `_execute_action` command
+- Set suggested keys:
+  - `default`: "Ctrl+Shift+G"
+  - `mac`: "Command+Shift+G"
+- Set description: "Open Tab Goblin"
+
+**Manifest Addition:**
+```json
+{
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+G",
+        "mac": "Command+Shift+G"
+      },
+      "description": "Open Tab Goblin"
+    }
+  }
+}
+```
 
 **Files to Modify:**
-- `src/background/service-worker.js` (tab close to history logic)
-- `src/common/storage.js` (may need helper: `VaultStorage.hasUrl(url)`)
+- `manifest.json`
 
-**Completion Promise:** Closing a tab whose URL exists in the vault does NOT add it to history.
+**Completion Promise:** After extension reload, keyboard shortcut appears in `chrome://extensions/shortcuts`. Pressing shortcut toggles side panel.
 
 ---
 
-### TG5-004: Prevent Duplicate History Entries [DONE]
+### TG6-009: Add Shortcut Display to Settings [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 2.2
 
-**Goal:** The same URL should not appear multiple times in history.
-
-**Background:**
-Users can accumulate multiple history entries for the same URL by repeatedly opening and closing tabs. History should have unique URLs.
+**Goal:** Display current keyboard shortcut in Settings with OS-appropriate formatting.
 
 **Tasks:**
-- In history add logic, check if URL already exists
-- If exists: Either skip entirely OR update the timestamp/title
-- Decision: Skip (keep original) or Update (show most recent)?
-- Recommendation: Skip — first visit is the "original" bookmark
-- Test: Close same URL twice — should appear only once in history
-
-**Files to Modify:**
-- `src/common/history.js` (add duplicate check)
-- `src/background/service-worker.js` (if history logic is there)
-
-**Completion Promise:** History contains unique URLs only. Closing the same URL multiple times does not create duplicates.
-
----
-
-### TG5-005: History Collapsed by Default [DONE]
-
-**Priority:** MEDIUM
-**PRD Reference:** Section 2.3
-
-**Goal:** History section should be collapsed when first viewing the Vault tab.
-
-**Background:**
-History should be unobtrusive — collapsed by default, expanded on demand.
-
-**Tasks:**
-- Find where `expandedVaultGroups` or history section state is initialized
-- Remove history from initial expanded state (if present)
-- Ensure history ID is NOT in expanded set by default
-- Test: Open side panel, go to Vault — history should be collapsed
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (history section render/state)
-
-**Completion Promise:** History section is collapsed by default on page load and tab switch.
-
----
-
-### TG5-006: History Position and Accordion Direction [DONE]
-
-**Priority:** MEDIUM
-**PRD Reference:** Section 2.4
-
-**Goal:** History should be at the BOTTOM of the Vault tab and expand UPWARD.
-
-**Background:**
-History is supplementary — it should not push vault groups down. Placing it at the bottom with upward expansion keeps focus on vault content.
-
-**Tasks:**
-- In `renderVaultPanel()` or equivalent, render history AFTER vault groups
-- Apply CSS for upward accordion expansion:
-  - Position history at bottom
-  - When expanded, content should appear above the header
-  - Consider `flex-direction: column-reverse` or absolute positioning
-- Test: Expand history — content should appear above the history header
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (render order)
-- `src/sidepanel/sidepanel.css` (upward expansion styles)
-
-**Completion Promise:** History section is at the bottom of Vault. Expanding it shows content above the header (accordion opens upward).
-
----
-
-## Phase 3: Vault UI Improvements
-
-### TG5-007: Icon Buttons for Individual Vault Items [DONE]
-
-**Priority:** MEDIUM
-**PRD Reference:** Section 3.1
-
-**Goal:** Replace text buttons with icon buttons on individual vault items.
-
-**Icons (Unicode, not emoji):**
-- Restore/Open: ↗ (U+2197) — "north east arrow"
-- Copy: ⧉ (U+29C9) — "two joined squares" or ⎘ (U+2398) — "next page"
-- Delete: ✕ (U+2715) — "multiplication x"
-
-**Tasks:**
-- Locate `createVaultTabItem()` or equivalent function
-- Replace text button labels with icons
-- Add `title` attribute for accessibility: `title="Restore"`, `title="Copy"`, `title="Delete"`
-- Add `aria-label` for screen readers
-- Style icons appropriately (size, hover states)
-- Test: Vault items show icons instead of text
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (button creation)
-- `src/sidepanel/sidepanel.css` (icon button styles)
-
-**Completion Promise:** Individual vault items display icon buttons (↗ ⧉ ✕) instead of text. Buttons have accessible labels.
-
----
-
-### TG5-008: Icon Buttons for Vault Groups [DONE]
-
-**Priority:** MEDIUM
-**PRD Reference:** Section 3.2
-
-**Goal:** Replace text buttons with icon buttons on vault group headers.
-
-**Icons:**
-- Restore All: ↗ (U+2197)
-- Rename: ✎ (U+270E) — "lower right pencil"
-- Copy All: ⧉ (U+29C9)
-- Delete Group: ✕ (U+2715)
-
-**Tasks:**
-- Locate `createGroupCard()` or equivalent function
-- Replace text button labels with icons
-- Add `title` and `aria-label` attributes
-- Ensure icon buttons fit in group header layout
-- Test: Vault groups show icon buttons
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (group header/menu)
-- `src/sidepanel/sidepanel.css` (icon styles)
-
-**Completion Promise:** Vault group headers display icon buttons. All icons have accessible labels.
-
----
-
-### TG5-009: Remove Move Up/Down Buttons [DONE]
-
-**Priority:** LOW
-**PRD Reference:** Section 3.3
-
-**Goal:** Remove Move Up and Move Down buttons from vault group menus.
-
-**Background:**
-v4 added these for accessibility as alternatives to drag-and-drop. However, they add clutter and drag-and-drop is sufficient. Remove them to simplify the UI.
-
-**Tasks:**
-- Locate `showGroupMenu()` or group menu creation
-- Remove "Move Up" and "Move Down" menu options
-- Remove associated handler functions if now unused
-- Test: Group context menu no longer shows move options
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (menu options, move functions)
-
-**Completion Promise:** Vault group menus do not include "Move Up" or "Move Down" options.
-
----
-
-### TG5-010: Fix Copy Button Behavior [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 3.4
-
-**Goal:** Copy button should copy URL(s) to clipboard, not open tabs.
-
-**Background:**
-Currently, Copy button behaves identically to Restore — it opens tabs. The expected behavior is to copy the URL (or URLs for a group) to the clipboard.
-
-**Tasks:**
-- Locate copy button handlers for:
-  - Individual vault items
-  - Vault groups (copy all)
-- Replace tab-opening logic with clipboard write:
-  ```javascript
-  // Individual item
-  await navigator.clipboard.writeText(tab.url);
-  showToast('Copied to clipboard');
-
-  // Group (multiple URLs)
-  const urls = group.tabs.map(t => t.url).join('\n');
-  await navigator.clipboard.writeText(urls);
-  showToast(`Copied ${group.tabs.length} URLs`);
-  ```
-- Add visual feedback (toast notification)
-- Test: Click Copy — URL copied, no tabs opened
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (copy handlers)
-
-**Completion Promise:** Copy button copies URL(s) to clipboard. Toast confirms the action. No tabs are opened.
-
----
-
-### TG5-011: Fix Drag-and-Drop Visual Update [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 3.5
-
-**Goal:** After drag-and-drop, UI should update immediately.
-
-**Background:**
-Dragging items between vault sections shows a success alert, but the UI doesn't reflect the change until a refresh or tab switch. The re-render should happen immediately.
-
-**Tasks:**
-- Locate drag-and-drop completion handler
-- After storage update succeeds:
-  - Re-render the vault panel (or affected sections)
-  - Show success feedback AFTER render completes
-- Ensure both source and destination sections update
-- Test: Drag item between groups — UI updates immediately
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (drag handlers, re-render logic)
-
-**Completion Promise:** Dragging items between vault sections updates the UI immediately. Both source and destination reflect the change.
-
----
-
-## Phase 4: Light Mode Themes
-
-### TG5-012: Add Light Theme Definitions [DONE]
-
-**Priority:** MEDIUM
-**PRD Reference:** Section 4.1
-
-**Goal:** Add 5 light theme palette definitions to themes.js.
-
-**Theme Definitions:**
+- Add "Keyboard Shortcut" section to Settings (between Appearance and Data)
+- Implement `getCurrentShortcut()`:
+  - Call `chrome.commands.getAll()`
+  - Find `_execute_action` command
+  - Return shortcut string or null
+- Implement `formatShortcutForOS(shortcut)`:
+  - Detect OS via `navigator.platform`
+  - Replace "Ctrl" with "Cmd" on macOS
+  - Keep "Ctrl" on Windows/Linux
+- Display current shortcut or "Not set"
+- Style shortcut as keyboard keys (rounded boxes)
+
+**OS Detection:**
 ```javascript
-'daylight-glass': { name: 'Daylight Glass', type: 'light' },
-'warm-sand': { name: 'Warm Sand', type: 'light' },
-'morning-lilac': { name: 'Morning Lilac', type: 'light' },
-'spring-mint': { name: 'Spring Mint', type: 'light' },
-'clean-slate': { name: 'Clean Slate', type: 'light' },
+const isMac = navigator.platform.toLowerCase().includes('mac');
 ```
 
-**Tasks:**
-- Add 5 light theme entries to `THEMES` object in `themes.js`
-- Add `getLightThemes()` function (mirror of `getDarkThemes()`)
-- Test: `Themes.getLightThemes()` returns 5 light themes
-
 **Files to Modify:**
-- `src/common/themes.js`
+- `src/sidepanel/sidepanel.js`
+- `src/sidepanel/sidepanel.css` (keyboard key styles)
 
-**Completion Promise:** `themes.js` contains 5 light theme definitions. `getLightThemes()` returns them.
+**Completion Promise:** Settings shows "Keyboard Shortcut" section. Current shortcut displayed with correct OS modifier. "Not set" shown if no shortcut configured.
 
 ---
 
-### TG5-013: Add Light Theme CSS [DONE]
+### TG6-010: Add Configure Shortcut Link [DONE]
+
+**Priority:** HIGH
+**PRD Reference:** Section 2.3
+
+**Goal:** Provide link to Chrome's shortcut configuration page.
+
+**Tasks:**
+- Add "Configure in Chrome Settings" button/link below shortcut display
+- On click: open `chrome://extensions/shortcuts` in new tab
+- Use `chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })`
+- Add brief instruction text if shortcut is "Not set"
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js`
+
+**Completion Promise:** Clicking "Configure" opens Chrome's extension shortcuts page in new tab.
+
+---
+
+## Phase 4: Polish and Testing
+
+### TG6-011: Settings Section Ordering [DONE]
 
 **Priority:** MEDIUM
-**PRD Reference:** Section 4.1
+**PRD Reference:** UI Specifications
 
-**Goal:** Add CSS custom properties for all 5 light themes.
+**Goal:** Ensure Settings sections are in correct order.
 
-**Color Reference:** `images_context_input/palettes-light.html`
+**Correct Order:**
+1. Appearance (Theme Mode, Theme Palette)
+2. Keyboard Shortcut (Current shortcut, Configure link)
+3. Data (Export, Import)
+4. Home Tabs (Pattern list, Add pattern)
 
 **Tasks:**
-- Add CSS blocks for each light theme:
-  ```css
-  [data-theme="daylight-glass"] {
-    --bg: #ffffff;
-    --bg-surface: #e0f2fe;
-    --primary: #0284c7;
-    /* ... full palette */
-  }
-  ```
-- Copy color values from `palettes-light.html`
-- Match structure of existing dark theme CSS
-- Test: Apply each theme — colors match the palette spec
-
-**Theme Color Mapping (from palettes-light.html):**
-
-| Theme | BG | Surface | Primary | Accent | Muted |
-|-------|----|---------| --------|--------|-------|
-| daylight-glass | #FFFFFF | #E0F2FE | #0284C7 | #0369A1 | #94A3B8 |
-| warm-sand | #FFFFFF | #FFEDD5 | #EA580C | #C2410C | #A8A29E |
-| morning-lilac | #FFFFFF | #EDE9FE | #7C3AED | #6D28D9 | #A1A1AA |
-| spring-mint | #FFFFFF | #D1FAE5 | #059669 | #047857 | #9CA3AF |
-| clean-slate | #FFFFFF | #EEF2FF | #4F46E5 | #4338CA | #A1A1AA |
+- Review Settings render function
+- Ensure sections render in correct order
+- Verify visual spacing between sections
 
 **Files to Modify:**
-- `src/sidepanel/sidepanel.css`
+- `src/sidepanel/sidepanel.js`
 
-**Completion Promise:** All 5 light themes have CSS custom property definitions. Each theme displays correct colors.
+**Completion Promise:** Settings tab sections appear in order: Appearance, Keyboard Shortcut, Data, Home Tabs.
 
 ---
 
-### TG5-014: Light Mode Theme Selector UI [DONE]
+### TG6-012: Import/Export Round-Trip Test [DONE]
+
+**Priority:** HIGH
+**PRD Reference:** Section 1.3
+
+**Goal:** Verify export can be re-imported without data loss.
+
+**Test Steps:**
+1. Create vault with multiple groups and tabs
+2. Export vault
+3. Clear vault (or use fresh profile)
+4. Import exported file
+5. Verify all groups and tabs restored correctly
+6. Verify timestamps preserved
+
+**Manual Testing Checklist:**
+- [ ] Export creates valid HTML file
+- [ ] File opens in text editor with correct structure
+- [ ] File imports into Chrome bookmarks correctly
+- [ ] File imports back into Tab Goblin correctly
+- [ ] Group names preserved
+- [ ] Tab titles preserved
+- [ ] Tab URLs preserved
+- [ ] No data corruption
+
+**Completion Promise:** Exported vault can be imported back with all data intact.
+
+---
+
+### TG6-013: Cross-Browser Import Test [DONE]
 
 **Priority:** MEDIUM
-**PRD Reference:** Section 4.2
+**PRD Reference:** Section 1.3
 
-**Goal:** When Light mode is selected, show theme palette options (same as Dark mode).
+**Goal:** Verify import works with exports from other browsers.
 
-**Background:**
-Currently, selecting Dark mode shows a palette picker; Light mode shows nothing. Reuse the SAME UI component for both.
+**Test Steps:**
+1. Export bookmarks from Chrome
+2. Export bookmarks from Firefox (if available)
+3. Export bookmarks from Edge (if available)
+4. Import each into Tab Goblin
+5. Verify groups and tabs created correctly
 
-**Tasks:**
-- Locate theme mode change handler in `sidepanel.js`
-- When "light" is selected, show palette picker with `Themes.getLightThemes()`
-- When "dark" is selected, show palette picker with `Themes.getDarkThemes()`
-- Reuse the same rendering function for both
-- Save selected light palette to settings
-- Apply selected light palette when light mode is active
-- Test: Switch to Light mode — palette options appear
+**Edge Cases to Test:**
+- [ ] Chrome Bookmarks Bar folder
+- [ ] Chrome Other Bookmarks folder
+- [ ] Nested folder structures (3+ levels)
+- [ ] Special characters in titles
+- [ ] Very long URLs
+- [ ] Bookmarks without titles
 
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (theme mode handler, palette render)
-
-**Completion Promise:** Selecting Light mode shows 5 light theme palette options. Selecting a light palette applies it. Same UI component as dark mode.
-
----
-
-## Phase 5: Remove Deprecated UI
-
-### TG5-015: Remove Edit Patterns from Live Tabs [DONE]
-
-**Priority:** LOW
-**PRD Reference:** Section 5.1
-
-**Goal:** Remove the Edit Patterns link and section from Live Tabs panel.
-
-**Background:**
-The Edit Patterns functionality exists on the Settings page. Having it on Live Tabs is redundant and adds clutter. The link only navigates to Settings anyway.
-
-**Tasks:**
-- Locate Edit Patterns section/link in Live Tabs rendering
-- Remove the HTML element creation
-- Remove associated click handlers
-- Remove CSS for removed elements (if specific to this)
-- Test: Live Tabs panel no longer shows Edit Patterns
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (Live Tabs render)
-- `src/sidepanel/sidepanel.css` (cleanup unused styles)
-
-**Completion Promise:** Live Tabs panel does not contain Edit Patterns link or section.
+**Completion Promise:** Chrome, Firefox, and Edge bookmark exports import correctly into Tab Goblin.
 
 ---
 
-## Phase 6: Testing
+### TG6-014: Shortcut Functionality Test [DONE]
 
-### TG5-016: Regression Testing [DONE]
+**Priority:** HIGH
+**PRD Reference:** Section 2.1
+
+**Goal:** Verify keyboard shortcut works correctly.
+
+**Test Steps:**
+1. Install/reload extension
+2. Verify default shortcut appears in `chrome://extensions/shortcuts`
+3. Press Ctrl+Shift+G (or Cmd+Shift+G on Mac)
+4. Verify side panel opens
+5. Press shortcut again
+6. Verify side panel closes (toggles)
+7. Customize shortcut in Chrome settings
+8. Verify Settings displays new shortcut
+
+**Completion Promise:** Keyboard shortcut toggles side panel. Settings displays current shortcut correctly.
+
+---
+
+### TG6-015: Regression Testing [DONE]
 
 **Priority:** HIGH
 
 **Goal:** Verify all existing functionality works after changes.
 
 **Test Cases:**
-- [x] Home tab protection still works for "Vault All"
-- [x] Adding home tabs creates correct patterns
-- [x] Removing home tabs clears patterns
-- [x] Manual tab close works for all tab types
-- [x] History receives tabs that should be there
-- [x] History does not receive vault matches or duplicates
-- [x] History accordion works correctly
-- [x] Vault group creation and deletion works
-- [x] Vault item restore opens correct tabs
-- [x] Vault item copy copies to clipboard
-- [x] Vault group copy copies all URLs
-- [x] Drag-and-drop between groups works
-- [x] All 5 dark themes work
-- [x] All 5 light themes work
-- [x] Theme switching is smooth
-- [x] Settings persist across reload
-- [x] All icon buttons have accessible labels
+- [ ] Vault operations (add, remove, restore groups)
+- [ ] Tab vaulting (manual, vault all, vault domain)
+- [ ] Home tab protection
+- [ ] History functionality
+- [ ] Theme switching (light/dark, all palettes)
+- [ ] Drag-and-drop between groups
+- [ ] Copy to clipboard
+- [ ] Search functionality
+- [ ] Keyboard navigation
 
-**Completion Promise:** All test cases pass. No regressions from v4.
+**Completion Promise:** All existing functionality works correctly. No regressions from v5.
 
 ---
 
@@ -459,38 +441,40 @@ The Edit Patterns functionality exists on the Settings page. Having it on Live T
 
 | Priority | Tickets | Description |
 |----------|---------|-------------|
-| HIGH | TG5-001, TG5-002, TG5-003, TG5-004, TG5-010, TG5-011, TG5-016 | Home tabs, history dedup, copy fix, drag-drop, testing |
-| MEDIUM | TG5-005, TG5-006, TG5-007, TG5-008, TG5-012, TG5-013, TG5-014 | History UX, icon buttons, light themes |
-| LOW | TG5-009, TG5-015 | Remove move buttons, remove edit patterns |
+| HIGH | TG6-001 to TG6-006, TG6-008 to TG6-010, TG6-012, TG6-014, TG6-015 | Core import/export, shortcut, testing |
+| MEDIUM | TG6-007, TG6-011, TG6-013 | Error handling, polish, cross-browser |
 
 ---
 
 ## Dependency Graph
 
 ```
-TG5-012 (theme defs) → TG5-013 (theme CSS) → TG5-014 (theme UI)
-TG5-003 (vault match) → TG5-004 (duplicates)  [share URL checking logic]
-TG5-007 (item icons) + TG5-008 (group icons)  [can be parallel]
-TG5-010 (copy fix) → TG5-007, TG5-008         [copy is part of icons]
+TG6-001 (module) → TG6-002 (export) → TG6-003 (export UI)
+TG6-001 (module) → TG6-004 (parser) → TG6-005 (import) → TG6-006 (import UI) → TG6-007 (errors)
+TG6-008 (manifest) → TG6-009 (display) → TG6-010 (configure link)
+TG6-003 + TG6-006 → TG6-011 (section order)
+TG6-002 + TG6-005 → TG6-012 (round-trip test)
+TG6-004 → TG6-013 (cross-browser test)
+TG6-008 + TG6-009 → TG6-014 (shortcut test)
+All → TG6-015 (regression)
 ```
 
 ---
 
 ## Recommended Order
 
-1. **TG5-010** — Fix copy behavior (high impact)
-2. **TG5-011** — Fix drag-and-drop refresh
-3. **TG5-001** — Home tab pattern cleanup
-4. **TG5-002** — Home tab close handling
-5. **TG5-003** — History vault match check
-6. **TG5-004** — History duplicate prevention
-7. **TG5-005** — History collapsed default
-8. **TG5-006** — History position/direction
-9. **TG5-007** — Individual item icons
-10. **TG5-008** — Group icons
-11. **TG5-009** — Remove move buttons
-12. **TG5-012** — Light theme definitions
-13. **TG5-013** — Light theme CSS
-14. **TG5-014** — Light theme UI
-15. **TG5-015** — Remove edit patterns
-16. **TG5-016** — Final testing
+1. **TG6-001** — Create import/export module
+2. **TG6-002** — Implement export function
+3. **TG6-003** — Add export UI
+4. **TG6-004** — Implement import parser
+5. **TG6-005** — Implement import to vault
+6. **TG6-006** — Add import UI
+7. **TG6-007** — Import error handling
+8. **TG6-008** — Add commands to manifest
+9. **TG6-009** — Add shortcut display
+10. **TG6-010** — Add configure link
+11. **TG6-011** — Settings section ordering
+12. **TG6-012** — Round-trip test
+13. **TG6-013** — Cross-browser test
+14. **TG6-014** — Shortcut test
+15. **TG6-015** — Regression testing

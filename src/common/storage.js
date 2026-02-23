@@ -53,13 +53,6 @@ async function withLock(operation) {
 }
 
 /**
- * Generate a unique ID
- */
-function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
-}
-
-/**
  * Sanitize group name for safe storage and display
  * @param {string} name
  * @returns {string}
@@ -115,11 +108,11 @@ async function addGroup(name, tabs = []) {
     const now = Date.now();
 
     const group = {
-      id: generateId(),
+      id: UrlUtils.generateId(),
       name: sanitizeGroupName(name),
       createdAt: now,
       tabs: tabs.map(tab => ({
-        id: generateId(),
+        id: UrlUtils.generateId(),
         url: tab.url || '',
         title: tab.title || 'Untitled',
         favIconUrl: tab.favIconUrl || '',
@@ -169,7 +162,7 @@ async function addTabsToGroup(groupId, tabs) {
 
     const now = Date.now();
     const newTabs = tabs.map(tab => ({
-      id: generateId(),
+      id: UrlUtils.generateId(),
       url: tab.url || '',
       title: tab.title || 'Untitled',
       favIconUrl: tab.favIconUrl || '',
@@ -260,6 +253,97 @@ async function reorderGroups(fromIndex, toIndex) {
   });
 }
 
+/**
+ * Move a tab from one group to another (with optional position)
+ * @param {string} sourceGroupId - Source group ID
+ * @param {string} tabId - Tab ID to move
+ * @param {string} targetGroupId - Target group ID
+ * @param {string|null} beforeTabId - Insert before this tab ID (null = append to end)
+ * @returns {Promise<{success: boolean, sourceRemoved: boolean}>}
+ */
+async function moveTab(sourceGroupId, tabId, targetGroupId, beforeTabId = null) {
+  return withLock(async () => {
+    const vault = await getVault();
+
+    const sourceGroup = vault.groups.find(g => g.id === sourceGroupId);
+    const targetGroup = vault.groups.find(g => g.id === targetGroupId);
+
+    if (!sourceGroup || !targetGroup) {
+      return { success: false, sourceRemoved: false };
+    }
+
+    // Find and remove tab from source
+    const tabIndex = sourceGroup.tabs.findIndex(t => t.id === tabId);
+    if (tabIndex === -1) {
+      return { success: false, sourceRemoved: false };
+    }
+
+    const [tab] = sourceGroup.tabs.splice(tabIndex, 1);
+
+    // Insert into target group
+    if (beforeTabId) {
+      const beforeIndex = targetGroup.tabs.findIndex(t => t.id === beforeTabId);
+      if (beforeIndex !== -1) {
+        targetGroup.tabs.splice(beforeIndex, 0, tab);
+      } else {
+        targetGroup.tabs.push(tab);
+      }
+    } else {
+      targetGroup.tabs.push(tab);
+    }
+
+    // Check if source group is now empty and should be removed
+    let sourceRemoved = false;
+    if (sourceGroup.tabs.length === 0) {
+      const sourceIndex = vault.groups.findIndex(g => g.id === sourceGroupId);
+      if (sourceIndex !== -1) {
+        vault.groups.splice(sourceIndex, 1);
+        sourceRemoved = true;
+      }
+    }
+
+    await saveVault(vault);
+    return { success: true, sourceRemoved };
+  });
+}
+
+/**
+ * Move a group to a new position
+ * @param {string} sourceGroupId - Group to move
+ * @param {string} targetGroupId - Reference group for positioning
+ * @param {boolean} insertBefore - Insert before target (true) or after (false)
+ * @returns {Promise<boolean>} - True if reordered
+ */
+async function moveGroup(sourceGroupId, targetGroupId, insertBefore) {
+  return withLock(async () => {
+    const vault = await getVault();
+
+    const sourceIndex = vault.groups.findIndex(g => g.id === sourceGroupId);
+    const targetIndex = vault.groups.findIndex(g => g.id === targetGroupId);
+
+    if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) {
+      return false;
+    }
+
+    // Remove the source group
+    const [group] = vault.groups.splice(sourceIndex, 1);
+
+    // Calculate new index (accounting for removal)
+    let newIndex = targetIndex;
+    if (sourceIndex < targetIndex) {
+      newIndex = insertBefore ? targetIndex - 1 : targetIndex;
+    } else {
+      newIndex = insertBefore ? targetIndex : targetIndex + 1;
+    }
+
+    // Insert at new position
+    vault.groups.splice(newIndex, 0, group);
+
+    await saveVault(vault);
+    return true;
+  });
+}
+
 // Export for use in other modules
 const VaultStorage = {
   getVault,
@@ -270,7 +354,9 @@ const VaultStorage = {
   removeTabsFromGroup,
   getGroup,
   updateGroup,
-  reorderGroups
+  reorderGroups,
+  moveTab,
+  moveGroup
 };
 
 // Make available globally for both window (popup) and service worker contexts

@@ -5,9 +5,9 @@ Technical documentation for developers working on Tab Goblin.
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [v2 Changes: Side Panel](#v2-changes-side-panel)
-3. [Project Structure](#project-structure)
-4. [Core Modules](#core-modules)
+2. [Project Structure](#project-structure)
+3. [Core Modules](#core-modules)
+4. [Concurrency & Locking](#concurrency--locking)
 5. [Chrome APIs Used](#chrome-apis-used)
 6. [Data Flow](#data-flow)
 7. [Message Passing](#message-passing)
@@ -63,86 +63,13 @@ Tab Goblin follows the Chrome Extension Manifest V3 architecture:
 
 ---
 
-## v2 Changes: Side Panel
-
-v2 replaces the popup with a persistent side panel using the `chrome.sidePanel` API.
-
-### Why Side Panel?
-
-- **Persistent** — Stays open while navigating between tabs
-- **More Space** — Taller than popup, better for long lists
-- **Resizable** — Users can adjust width
-- **Drag-and-Drop Ready** — Better UX for reorganizing tabs
-
-### Manifest Changes
-
-```json
-{
-  "permissions": ["sidePanel", "tabs", "storage", "activeTab"],
-  "side_panel": {
-    "default_path": "src/sidepanel/sidepanel.html"
-  }
-}
-```
-
-### Service Worker Setup
-
-```javascript
-// In service-worker.js
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-```
-
-### File Structure
-
-```
-src/
-├── sidepanel/           # Side panel UI (primary interface)
-│   ├── sidepanel.html
-│   ├── sidepanel.css
-│   └── sidepanel.js
-├── background/
-│   └── service-worker.js
-└── common/
-    ├── storage.js
-    ├── home-tabs.js
-    ├── settings.js
-    └── themes.js
-```
-
-### Key Differences from Popup
-
-| Aspect | Popup (v1) | Side Panel (v2) |
-|--------|------------|-----------------|
-| Lifecycle | Closes when clicking away | Persists until manually closed |
-| Height | Fixed max (500px) | Full browser height |
-| Width | Fixed (400px) | User-resizable |
-| Navigation | Button-based | Tab-based (Vault, Live Tabs, Settings) |
-| Live Tabs | Separate view | Accordion grouped by domain |
-
-### API Reference
-
-```javascript
-// Open side panel programmatically
-chrome.sidePanel.open({ windowId: tab.windowId });
-
-// Set default behavior
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-
-// Set panel options per tab (optional)
-chrome.sidePanel.setOptions({
-  tabId: tabId,
-  path: 'src/sidepanel/sidepanel.html',
-  enabled: true
-});
-```
-
 ---
 
 ## Project Structure
 
 ```
 chrome_tab_shutdown/
-├── manifest.json                 # Extension configuration
+├── manifest.json                 # Extension configuration (permissions, commands)
 ├── src/
 │   ├── assets/
 │   │   ├── icon16.png           # 16x16 toolbar icon
@@ -150,15 +77,21 @@ chrome_tab_shutdown/
 │   ├── background/
 │   │   └── service-worker.js    # Background script (MV3)
 │   ├── common/
-│   │   ├── storage.js           # Vault storage operations
+│   │   ├── storage.js           # Vault storage with concurrency locking
 │   │   ├── home-tabs.js         # Home tab pattern matching
-│   │   ├── settings.js          # User settings storage
-│   │   └── themes.js            # Theme definitions and API
+│   │   ├── settings.js          # User settings with locking
+│   │   ├── history.js           # History storage with locking
+│   │   ├── themes.js            # Theme definitions and API
+│   │   ├── dialog.js            # Unified dialog system
+│   │   ├── url-utils.js         # URL validation, generateId, getDomainFromUrl
+│   │   ├── ui-helpers.js        # pluralizeTabs, clearContainer, showToast
+│   │   └── import-export.js     # Netscape bookmark import/export
 │   └── sidepanel/
 │       ├── sidepanel.html       # Side panel structure
-│       ├── sidepanel.css        # Side panel styles
+│       ├── sidepanel.css        # Side panel styles + theme variables
 │       └── sidepanel.js         # Side panel logic
 ├── documentation/               # This documentation
+├── archive/                     # Previous version documents
 ├── PRD.md                       # Product requirements
 ├── TICKETS.md                   # Implementation tickets
 └── CLAUDE.md                    # AI assistant context
@@ -170,52 +103,116 @@ chrome_tab_shutdown/
 
 ### storage.js
 
-Manages vault data persistence.
+Manages vault data persistence with concurrency locking.
 
 ```javascript
 // Key functions
 VaultStorage.getVault()                    // Get full vault object
 VaultStorage.saveVault(vault)              // Save full vault
-VaultStorage.addGroup(name, tabs)          // Create new group
-VaultStorage.removeGroup(groupId)          // Delete group
-VaultStorage.addTabsToGroup(groupId, tabs) // Append tabs
-VaultStorage.removeTabsFromGroup(groupId, tabIds) // Remove specific tabs
+VaultStorage.addGroup(name, tabs)          // Create new group (locked)
+VaultStorage.removeGroup(groupId)          // Delete group (locked)
+VaultStorage.addTabsToGroup(groupId, tabs) // Append tabs (locked)
+VaultStorage.removeTabsFromGroup(groupId, tabIds) // Remove specific tabs (locked)
 VaultStorage.getGroup(groupId)             // Get single group
-VaultStorage.updateGroup(groupId, updates) // Update group properties
+VaultStorage.updateGroup(groupId, updates) // Update group properties (locked)
+VaultStorage.moveTab(sourceGroupId, tabId, targetGroupId, beforeTabId) // Move tab (locked)
+VaultStorage.moveGroup(sourceGroupId, targetGroupId, insertBefore) // Reorder groups (locked)
+```
+
+### history.js
+
+Manages recently closed tabs with concurrency locking.
+
+```javascript
+// Key functions
+History.getHistory()                       // Get history object
+History.addToHistory(tab)                  // Add single tab (locked, deduplicates)
+History.addManyToHistory(tabs)             // Add multiple tabs (locked, deduplicates)
+History.removeFromHistory(tabId)           // Remove single tab (locked)
+History.clearHistory()                     // Clear all history (locked)
 ```
 
 ### home-tabs.js
 
-Handles home tab URL pattern matching.
+Handles home tab URL pattern matching with batch operations.
 
 ```javascript
 // Key functions
 HomeTabs.getHomePatterns()                 // Get all patterns
-HomeTabs.saveHomePatterns(patterns)        // Save patterns
 HomeTabs.addHomePattern(pattern)           // Add new pattern
 HomeTabs.removeHomePattern(pattern)        // Remove pattern
 HomeTabs.isHomeTab(url)                    // Async check
 HomeTabs.isHomeTabSync(url, patterns)      // Sync check (patterns pre-loaded)
-HomeTabs.patternToRegex(pattern)           // Convert wildcard to regex
+HomeTabs.patternToRegex(pattern)           // Convert wildcard to regex (ReDoS-safe)
+HomeTabs.trackManyHomeInstances(tabInfos)  // Batch track multiple tabs
 ```
 
 ### settings.js
 
-Manages user preferences.
+Manages user preferences with concurrency locking.
 
 ```javascript
 // Key functions
 Settings.getSettings()                     // Get all settings
-Settings.saveSettings(settings)            // Save settings
 Settings.getSetting(key)                   // Get single setting
-Settings.updateSetting(key, value)         // Update single setting
+Settings.updateSetting(key, value)         // Update single setting (locked)
 
 // Settings keys
 {
-  skipShutdownAllConfirm: boolean,  // Skip confirmation for Shutdown All
-  skipLargeRestoreConfirm: boolean, // Skip confirmation for large restores
-  onboardingComplete: boolean        // First-run onboarding shown
+  themeMode: 'system' | 'light' | 'dark',
+  lightPalette: string,
+  darkPalette: string,
+  skipShutdownAllConfirm: boolean,
+  skipLargeRestoreConfirm: boolean,
+  onboardingComplete: boolean
 }
+```
+
+### dialog.js
+
+Unified dialog system for confirms and prompts.
+
+```javascript
+// Key functions
+Dialog.showConfirm(options)                // Show confirmation dialog
+Dialog.showPrompt(options)                 // Show input prompt dialog
+Dialog.hide()                              // Hide current dialog
+```
+
+### url-utils.js
+
+URL validation and utility functions.
+
+```javascript
+// Key functions
+UrlUtils.isSkippableUrl(url)               // Check if URL should be skipped (chrome://, etc.)
+UrlUtils.isValidUrlForOpening(url)         // Validate URL is safe to open
+UrlUtils.getDomainFromUrl(url)             // Extract domain from URL
+UrlUtils.normalizeUrl(url)                 // Normalize URL for comparison
+UrlUtils.generateId()                      // Generate unique ID (timestamp + random)
+```
+
+### import-export.js
+
+Netscape Bookmark HTML import/export.
+
+```javascript
+// Key functions
+ImportExport.generateNetscapeBookmarks(vault) // Generate HTML from vault
+ImportExport.parseNetscapeBookmarks(html)     // Parse HTML to groups
+ImportExport.downloadExport(vault)            // Download vault as HTML file
+ImportExport.importToVault(parsedGroups)      // Import groups to vault
+```
+
+### themes.js
+
+Theme definitions and application.
+
+```javascript
+// Key functions
+Themes.applyTheme(palette)                 // Apply a theme palette
+Themes.getDarkPalettes()                   // Get list of dark palettes
+Themes.getLightPalettes()                  // Get list of light palettes
 ```
 
 ### service-worker.js
@@ -224,28 +221,74 @@ Background script handling tab operations.
 
 ```javascript
 // Message handlers
-'shutdown-tabs'      // Vault specific tabs
-'shutdown-all'       // Vault all non-home tabs
+'shutdown-tabs'           // Vault specific tabs
+'shutdown-all'            // Vault all non-home tabs
 'shutdown-tabs-by-domain' // Vault tabs, group by domain
-'shutdown-domain'    // Vault all tabs from a domain
-'restore-group'      // Open group tabs, remove from vault
-'restore-tabs'       // Open specific tabs, remove from vault
-'duplicate-group'    // Open group tabs, keep in vault
-'duplicate-tabs'     // Open specific tabs, keep in vault
-'get-domain-groups'  // Get open tabs grouped by domain
+'shutdown-domain'         // Vault all tabs from a domain
+'restore-group'           // Open group tabs, remove from vault
+'restore-tabs'            // Open specific tabs, remove from vault
+'duplicate-group'         // Open group tabs, keep in vault
+'duplicate-tabs'          // Open specific tabs, keep in vault
+'get-domain-groups'       // Get open tabs grouped by domain
 ```
 
-### sidepanel.js
+---
 
-UI logic and user interaction.
+## Concurrency & Locking
 
-Key functions:
-- `init()` — Initialize side panel on load
-- `renderVaultGroups()` — Display vault groups
-- `renderLiveTabsAccordion()` — Display live tabs grouped by domain
-- `shutdownAll()` — Vault all tabs
-- `restoreGroup(groupId)` — Restore a group
-- `showToast(message, type)` — Show notification
+All storage modules use a locking mechanism to prevent race conditions during read-modify-write operations.
+
+### Why Locking?
+
+When "Vault All" closes 20 tabs rapidly, 20 concurrent calls to storage can interleave:
+1. Read A, Read B (both see same state)
+2. Modify A, Modify B (both modify independently)
+3. Write A, Write B (B overwrites A's changes)
+
+This causes data loss. Locking ensures sequential execution.
+
+### Lock Implementation
+
+Each module uses a `withLock()` pattern:
+
+```javascript
+let lockPromise = Promise.resolve();
+
+async function withLock(operation) {
+  const previousLock = lockPromise;
+  let resolve;
+  lockPromise = new Promise(r => { resolve = r; });
+
+  try {
+    await previousLock;
+    return await operation();
+  } finally {
+    resolve();
+  }
+}
+
+// Usage in methods
+async function addGroup(name, tabs) {
+  return withLock(async () => {
+    const vault = await getVault();
+    // ... modify vault ...
+    await saveVault(vault);
+    return group;
+  });
+}
+```
+
+### Modules with Locking
+
+| Module | Lock Function | Operations Protected |
+|--------|---------------|---------------------|
+| storage.js | `withLock()` | All vault mutations |
+| history.js | `withHistoryLock()` | All history mutations |
+| settings.js | `withSettingsLock()` | Settings updates |
+
+### Important: Always Use Locked Methods
+
+Never bypass locked methods by calling `getVault()` + direct mutation + `saveVault()`. Always use the provided methods like `addGroup()`, `moveTab()`, etc.
 
 ---
 
@@ -293,7 +336,22 @@ chrome.runtime.onInstalled.addListener(handler)    // Extension installed/update
 // Keyboard shortcuts
 chrome.commands.onCommand.addListener((command) => {
   // command: 'shutdown-current-tab' or 'shutdown-all-tabs'
-})
+});
+
+// Get current shortcut configuration
+const commands = await chrome.commands.getAll();
+const actionCommand = commands.find(cmd => cmd.name === '_execute_action');
+const shortcut = actionCommand?.shortcut || 'Not set';
+```
+
+### chrome.sidePanel
+
+```javascript
+// Open side panel programmatically
+chrome.sidePanel.open({ windowId: tab.windowId });
+
+// Set default behavior (open on action click)
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 ```
 
 ---
@@ -303,15 +361,15 @@ chrome.commands.onCommand.addListener((command) => {
 ### Shutdown Flow
 
 ```
-User clicks "Shutdown All"
+User clicks "Vault All"
         │
         ▼
-popup.js: shutdownAll()
+sidepanel.js: executeShutdownAll()
         │
         ├─► Check skipShutdownAllConfirm setting
         ├─► Query all tabs
         ├─► Filter out home tabs
-        ├─► Show confirmation (if enabled)
+        ├─► Show confirmation dialog (if enabled)
         │
         ▼
 chrome.runtime.sendMessage({ action: 'shutdown-all' })
@@ -323,13 +381,14 @@ service-worker.js: handleMessage()
         ├─► Filter skippable URLs (chrome://)
         ├─► Filter home tabs
         ├─► VaultStorage.addGroup(name, tabs)
+        ├─► History.addManyToHistory(tabs)
         ├─► chrome.tabs.remove(tabIds)
         │
         ▼
 Return { success: true, count: N }
         │
         ▼
-popup.js: showToast(), updateLiveTabCount(), renderVaultGroups()
+sidepanel.js: showToast(), renderVaultGroups()
 ```
 
 ### Restore Flow
@@ -338,10 +397,10 @@ popup.js: showToast(), updateLiveTabCount(), renderVaultGroups()
 User clicks "Restore" on group
         │
         ▼
-popup.js: restoreGroup(groupId)
+sidepanel.js: restoreGroup(groupId)
         │
         ├─► Check group size
-        ├─► Show confirmation (if 10+ tabs)
+        ├─► Show confirmation dialog (if 10+ tabs)
         │
         ▼
 chrome.runtime.sendMessage({ action: 'restore-group', groupId })
@@ -357,17 +416,17 @@ service-worker.js: restoreGroup()
 Return { success: true, count: N }
         │
         ▼
-popup.js: showToast(), updateLiveTabCount(), renderVaultGroups()
+sidepanel.js: showToast(), renderVaultGroups()
 ```
 
 ---
 
 ## Message Passing
 
-### Popup → Service Worker
+### Side Panel → Service Worker
 
 ```javascript
-// In popup.js
+// In sidepanel.js
 const response = await chrome.runtime.sendMessage({
   action: 'shutdown-tabs',
   tabIds: [1, 2, 3],
@@ -375,9 +434,9 @@ const response = await chrome.runtime.sendMessage({
 });
 
 if (response.success) {
-  console.log(`Vaulted ${response.count} tabs`);
+  showToast(`Vaulted ${response.count} tabs`);
 } else {
-  console.error(response.error);
+  showToast(response.error, 'error');
 }
 ```
 
@@ -447,9 +506,30 @@ async function handleMessage(message) {
 ```javascript
 {
   "settings": {
+    "themeMode": "system",         // 'system' | 'light' | 'dark'
+    "lightPalette": "daylight-glass",
+    "darkPalette": "slate-minimal",
     "skipShutdownAllConfirm": false,
     "skipLargeRestoreConfirm": false,
     "onboardingComplete": true
+  }
+}
+```
+
+### History
+
+```javascript
+{
+  "history": {
+    "tabs": [
+      {
+        "id": "lxyz789ghi",
+        "url": "https://example.com/page",
+        "title": "Example Page",
+        "favIconUrl": "https://example.com/favicon.ico",
+        "closedAt": 1708617600000
+      }
+    ]
   }
 }
 ```
@@ -463,28 +543,41 @@ async function handleMessage(message) {
 1. **Load extension**
    - [ ] No errors in `chrome://extensions`
    - [ ] Icon appears in toolbar
-   - [ ] Popup opens on click
+   - [ ] Side panel opens on click
+   - [ ] Keyboard shortcut (Ctrl/Cmd+Shift+G) toggles panel
 
 2. **Vault operations**
-   - [ ] Shutdown All closes tabs
+   - [ ] Vault All closes tabs
    - [ ] Tabs appear in vault
    - [ ] Home tabs are preserved
    - [ ] Restore opens tabs
    - [ ] Group is removed after restore
+   - [ ] Drag-and-drop moves tabs between groups
 
 3. **Data persistence**
-   - [ ] Vault survives popup close
+   - [ ] Vault survives panel close
    - [ ] Vault survives browser restart
    - [ ] Vault survives extension reload
 
-4. **Edge cases**
+4. **Import/Export**
+   - [ ] Export downloads valid HTML file
+   - [ ] Exported file imports into Chrome bookmarks
+   - [ ] Import parses Chrome bookmark exports
+   - [ ] Round-trip: export then import preserves data
+
+5. **Themes**
+   - [ ] System mode follows OS preference
+   - [ ] Light/Dark mode switches correctly
+   - [ ] All palettes apply without errors
+
+6. **Edge cases**
    - [ ] Empty vault displays message
    - [ ] Search with no results shows message
    - [ ] Large groups (50+ tabs) perform well
 
 ### Console Testing
 
-Open popup, right-click → Inspect, then:
+Open side panel, right-click → Inspect, then:
 
 ```javascript
 // Check vault contents
@@ -512,7 +605,7 @@ VaultStorage.addGroup('Test Group', [
 
 ### Side Panel Debugging
 
-1. Open the side panel
+1. Open the side panel (click icon or press Ctrl/Cmd+Shift+G)
 2. Right-click inside side panel
 3. Select "Inspect"
 4. DevTools opens for side panel
@@ -555,7 +648,7 @@ async function myNewFunction(param) {
 }
 ```
 
-3. Call from popup:
+3. Call from sidepanel.js:
 ```javascript
 const response = await chrome.runtime.sendMessage({
   action: 'my-new-action',
@@ -578,26 +671,21 @@ const DEFAULT_SETTINGS = {
 const value = await Settings.getSetting('myNewSetting');
 ```
 
-3. Add UI toggle in popup if needed.
+3. Add UI toggle in Settings panel if needed.
 
-### Adding a New View
+### Adding a New Panel Section
 
-1. Add HTML structure in sidepanel.html:
-```html
-<div id="myView" class="view hidden">
-  <!-- content -->
-</div>
-```
+1. Add HTML structure in sidepanel.html within the appropriate tab panel.
 
-2. Add show function in sidepanel.js:
+2. Add render function in sidepanel.js:
 ```javascript
-function showMyView() {
-  showView('myView');
-  // initialize view
+function renderMySection() {
+  const container = document.getElementById('mySection');
+  // ... build DOM elements
 }
 ```
 
-3. Add styles in sidepanel.css.
+3. Add styles in sidepanel.css using CSS custom properties for theming.
 
 ---
 
