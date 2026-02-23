@@ -8,12 +8,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-**v5 In Progress** — Bug fixes and UI polish:
-- Fix home tab manual close and pattern cleanup on removal
-- Fix history behavior: duplicates, vault match prevention, collapsed default, bottom position
-- Vault UI: icon buttons for items/groups, fix copy behavior (clipboard), fix drag-drop refresh
-- Add 5 light mode theme palettes (matching dark themes)
-- Remove deprecated UI: Move Up/Down buttons, Edit Patterns from Live Tabs
+**v6 In Progress** — Import/Export and Keyboard Shortcuts:
+- Import/Export in Netscape Bookmark HTML format (Chrome-compatible)
+- Keyboard shortcut to toggle side panel (Ctrl/Cmd+Shift+G)
+- OS-specific shortcut display in Settings (macOS shows Cmd, Windows shows Ctrl)
+- Link to Chrome shortcut configuration page
+
+**v5 Complete** (archived):
+- Fixed home tab manual close and pattern cleanup on removal
+- Fixed history behavior: duplicates, vault match prevention, collapsed default, bottom position
+- Vault UI: icon buttons for items/groups, copy to clipboard, drag-drop refresh
+- Added 5 light mode theme palettes (matching dark themes)
+- Removed deprecated UI: Move Up/Down buttons, Edit Patterns from Live Tabs
 
 **v4 Complete** (archived):
 - Architecture refactor — popup archived, shared modules extracted
@@ -40,11 +46,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Key Documents
 
-- **PRD.md** — Full product requirements for v4
+- **PRD.md** — Full product requirements for v6
 - **TICKETS.md** — Implementation tickets (check for `[DONE]` status)
 - **PROMPT.md** — Ralph Loop instructions (ONLY used with `/ralph-loop` command)
 - **context_items/opus-cursor-review.md** — Comprehensive code review (v3 baseline)
-- **archive/** — Completed v1/v2/v3 iteration documents
+- **archive/** — Completed v1-v5 iteration documents
 - **documentation/** — User guide, developer guide, contributing guide
 
 ## Important: Ralph Loop Usage
@@ -59,6 +65,7 @@ For normal conversation and assistance, ignore PROMPT.md entirely.
 - Vanilla HTML/CSS/JS (no frameworks, no bundlers)
 - `chrome.storage.local` for persistence
 - `chrome.sidePanel` for UI
+- `chrome.commands` for keyboard shortcuts
 - Background service worker for tab operations
 - CSS custom properties for theming
 
@@ -78,7 +85,11 @@ chrome_tab_shutdown/
 │   │   ├── storage.js    # Vault storage with VaultStorage class
 │   │   ├── home-tabs.js  # Home tab patterns with HomeTabStorage
 │   │   ├── settings.js   # User settings with Settings class
-│   │   └── themes.js     # Theme definitions and Themes API
+│   │   ├── themes.js     # Theme definitions and Themes API
+│   │   ├── history.js    # History storage operations
+│   │   ├── ui-helpers.js # pluralizeTabs, clearContainer, showToast, setLoading
+│   │   ├── url-utils.js  # isSkippableUrl, getDomainFromUrl, normalizeUrl
+│   │   └── import-export.js  # NEW v6: Netscape bookmark import/export
 │   ├── popup/            # DEPRECATED: Unreachable (no default_popup in manifest)
 │   │   ├── popup.html    # Archive candidate
 │   │   ├── popup.css     # Archive candidate
@@ -109,6 +120,31 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 }
 ```
 
+### chrome.commands (v6)
+
+```javascript
+// Manifest configuration for keyboard shortcut
+{
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+G",
+        "mac": "Command+Shift+G"
+      },
+      "description": "Open Tab Goblin"
+    }
+  }
+}
+
+// Get current shortcut configuration
+const commands = await chrome.commands.getAll();
+const actionCommand = commands.find(cmd => cmd.name === '_execute_action');
+const shortcut = actionCommand?.shortcut || 'Not set';
+
+// Open Chrome's shortcut configuration page
+chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+```
+
 ### Message Passing
 
 ```javascript
@@ -127,7 +163,7 @@ chrome.runtime.sendMessage({ action: 'shutdown-all' });
 'get-domain-groups'       // Get live tabs grouped by domain
 ```
 
-### Theme System (v3)
+### Theme System (v3+)
 
 ```css
 /* CSS custom properties */
@@ -145,12 +181,43 @@ chrome.runtime.sendMessage({ action: 'shutdown-all' });
   --primary: #0ea5e9;
   /* ... */
 }
+
+/* Light theme example (v5) */
+[data-theme="daylight-glass"] {
+  --bg: #ffffff;
+  --bg-surface: #e0f2fe;
+  --primary: #0284c7;
+  /* ... */
+}
 ```
 
 ```javascript
 // Theme modes: 'system' | 'light' | 'dark' | 'custom'
 // Apply theme
 document.documentElement.setAttribute('data-theme', 'midnight-glass');
+```
+
+### Import/Export (v6)
+
+```javascript
+// Netscape Bookmark HTML format
+const html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<TITLE>Tab Goblin Export</TITLE>
+<H1>Tab Goblin Export</H1>
+<DL><p>
+    <DT><H3 ADD_DATE="${timestamp}">Group Name</H3>
+    <DL><p>
+        <DT><A HREF="url" ADD_DATE="${timestamp}">Title</A>
+    </DL><p>
+</DL><p>`;
+
+// ADD_DATE is Unix timestamp (seconds since 1970)
+const addDate = Math.floor(Date.now() / 1000);
+
+// Parse imported bookmarks
+const parser = new DOMParser();
+const doc = parser.parseFromString(html, 'text/html');
 ```
 
 ### Tab Navigation (v3)
@@ -180,32 +247,29 @@ chrome.tabs.onUpdated.addListener(callback);
 - **No console.log** — Remove debug statements before completion
 - **D.R.Y.** — Extract shared logic to `src/common/` modules
 - **Single source of truth** — One implementation per function across codebase
+- **HTML escaping** — Escape user content when generating HTML for export
 
-## Known Issues (v5 Focus)
+## v6 Implementation Notes
 
-See `TICKETS.md` for detailed bug tickets.
+### Import/Export Feature
+- Uses Netscape Bookmark HTML format (same as Chrome bookmark export)
+- Export: vault groups become folders, tabs become bookmarks
+- Import: parses Chrome/Firefox/Edge bookmark exports
+- Nested folders flattened with "Parent > Child" naming
+- Duplicate URLs skipped during import
 
-**High:**
-- Home tab pattern not removed when home tab is removed from UI
-- Manual home tab close behavior inconsistent
-- Copy button opens tabs instead of copying to clipboard
-- Drag-and-drop shows success but UI doesn't update
-- History contains duplicates and restored tabs
+### Keyboard Shortcut Feature
+- Uses `_execute_action` command in manifest
+- Default: Ctrl+Shift+G (Windows/Linux), Cmd+Shift+G (macOS)
+- Settings displays current shortcut with OS-appropriate modifier
+- Links to `chrome://extensions/shortcuts` for configuration
+- `chrome.commands.getAll()` reads current user configuration
 
-**Medium:**
-- History expanded by default (should be collapsed)
-- History position and accordion direction
-- Vault buttons use text instead of icons
-- Light mode has no theme palette options (dark has 5)
-
-**Low:**
-- Move Up/Down buttons add clutter (remove)
-- Edit Patterns link on Live Tabs redundant (remove)
-
-**Shared Modules (Created in v4):**
-- `src/common/ui-helpers.js` — pluralizeTabs, clearContainer, showToast, setLoading
-- `src/common/url-utils.js` — isSkippableUrl, getDomainFromUrl, normalizeUrl
-- `src/common/history.js` — History storage operations
+### OS Detection
+```javascript
+const isMac = navigator.platform.toLowerCase().includes('mac');
+const modifier = isMac ? 'Cmd' : 'Ctrl';
+```
 
 ## Context7 Usage
 
