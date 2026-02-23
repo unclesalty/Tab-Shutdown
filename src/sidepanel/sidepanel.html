@@ -69,6 +69,16 @@
         <div class="open-tabs-section">
           <div class="open-tabs-header">
             <span class="open-tabs-title">Open Tabs</span>
+            <div class="view-toggle" role="radiogroup" aria-label="View mode">
+              <button class="view-toggle-btn active" data-view="grouped"
+                      role="radio" aria-checked="true" title="Grouped by domain">
+                <span aria-hidden="true">&#9638;</span>
+              </button>
+              <button class="view-toggle-btn" data-view="ungrouped"
+                      role="radio" aria-checked="false" title="List view">
+                <span aria-hidden="true">&#9776;</span>
+              </button>
+            </div>
             <span class="open-tabs-count" id="openTabsCount">0</span>
             <div class="open-tabs-actions">
               <button id="selectAllBtn" class="btn-link btn-small-link">All</button>

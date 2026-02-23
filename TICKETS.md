@@ -1,439 +1,484 @@
-# TICKETS: Tab Goblin v6 — Import/Export and Keyboard Shortcuts
+# TICKETS: Tab Goblin v7 — Live Tabs View Improvements
 
 Each ticket includes a **Completion Promise** — the concrete condition to verify the ticket is done.
 
-**Previous Version:** v5 archived at `archive/TICKETS-v5-2026-02-22.md`
+**Previous Version:** v6 archived at `archive/TICKETS-v6-2026-02-22.md`
 **PRD Reference:** `PRD.md`
 
 ---
 
-## Phase 1: Export Feature
+## Phase 1: View Toggle Infrastructure
 
-### TG6-001: Create Import/Export Module [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.1, 1.3
-
-**Goal:** Create a shared module for import/export functionality.
-
-**Tasks:**
-- Create `src/common/import-export.js`
-- Implement `escapeHtml()` helper for safe HTML generation
-- Implement `generateNetscapeBookmarks(vault)` function
-- Implement `parseNetscapeBookmarks(html)` function
-- Handle nested folders by flattening with "Parent > Child" naming
-- Skip empty folders and `<HR>` separator elements
-- Export module for use in sidepanel
-
-**Netscape Format Structure:**
-```html
-<!DOCTYPE NETSCAPE-Bookmark-file-1>
-<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
-<TITLE>Tab Goblin Export</TITLE>
-<H1>Tab Goblin Export</H1>
-<DL><p>
-    <DT><H3 ADD_DATE="timestamp">Group Name</H3>
-    <DL><p>
-        <DT><A HREF="url" ADD_DATE="timestamp">Title</A>
-    </DL><p>
-</DL><p>
-```
-
-**Files to Create:**
-- `src/common/import-export.js`
-
-**Completion Promise:** Module exports `generateNetscapeBookmarks()` and `parseNetscapeBookmarks()` functions. Both handle the Netscape Bookmark format correctly.
-
----
-
-### TG6-002: Implement Export Vault Function [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.1, 1.2
-
-**Goal:** Generate and download vault as Netscape Bookmark HTML file.
-
-**Tasks:**
-- In `import-export.js`, implement full `generateNetscapeBookmarks()`:
-  - Convert each vault group to a folder (`<H3>`)
-  - Convert each tab to a bookmark (`<A HREF>`)
-  - Use `vaultedAt` timestamp (convert ms to seconds)
-  - Escape HTML entities in titles and URLs
-- Implement `downloadExport(vault)` function:
-  - Generate HTML content
-  - Create Blob with `text/html` type
-  - Create download link with filename `tab-goblin-export-YYYY-MM-DD.html`
-  - Trigger download
-  - Clean up object URL
-
-**Files to Modify:**
-- `src/common/import-export.js`
-
-**Completion Promise:** `downloadExport()` downloads a valid Netscape Bookmark HTML file. File can be imported into Chrome bookmarks.
-
----
-
-### TG6-003: Add Export UI to Settings [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.2
-
-**Goal:** Add Export button to Settings tab.
-
-**Tasks:**
-- Add "Data" section to Settings panel (after Appearance, before Home Tabs)
-- Add section header: "Data"
-- Add "Export Vault" button
-- Add description text: "Download your vault as a bookmark file"
-- Wire button to call `downloadExport()` with current vault
-- Show toast on success: "Vault exported successfully"
-- Handle empty vault case: show toast "Vault is empty"
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (Settings render)
-- `src/sidepanel/sidepanel.css` (section styles if needed)
-
-**Completion Promise:** Settings tab shows "Data" section with "Export Vault" button. Clicking exports the vault as HTML file.
-
----
-
-## Phase 2: Import Feature
-
-### TG6-004: Implement Import Parser [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.3, 1.5
-
-**Goal:** Parse Netscape Bookmark HTML into vault group structure.
-
-**Tasks:**
-- Implement `parseNetscapeBookmarks(html)`:
-  - Use DOMParser to parse HTML
-  - Find folder headers (`<DT><H3>`)
-  - Find bookmarks (`<DT><A>`)
-  - Build groups array with tabs
-  - Handle nested folders: flatten with "Parent > Child" naming
-  - Skip empty folders (no bookmarks)
-  - Skip separator elements (`<HR>`)
-  - Handle bookmarks without folder: create "Imported Bookmarks" group
-- Return structure: `{ groups: [{ name, tabs: [{ url, title }] }] }`
-
-**Edge Cases:**
-- Chrome Bookmarks Bar, Other Bookmarks folders
-- Firefox toolbar, menu, unsorted bookmarks
-- Deeply nested folders (3+ levels)
-- Empty file or invalid HTML
-
-**Files to Modify:**
-- `src/common/import-export.js`
-
-**Completion Promise:** `parseNetscapeBookmarks()` correctly parses Chrome, Firefox, and Edge bookmark exports. Returns flat group structure.
-
----
-
-### TG6-005: Implement Import to Vault [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.4, 1.5
-
-**Goal:** Add parsed bookmark groups to vault storage.
-
-**Tasks:**
-- Implement `importToVault(parsedGroups)`:
-  - Get existing vault URLs for deduplication
-  - For each group:
-    - Filter out tabs with URLs already in vault
-    - Skip group if all tabs are duplicates
-    - Add group via `VaultStorage.addGroup()`
-  - Return stats: `{ groupsAdded, tabsAdded, duplicatesSkipped }`
-- Add helper to `storage.js` if needed: `VaultStorage.getAllUrls()`
-
-**Files to Modify:**
-- `src/common/import-export.js`
-- `src/common/storage.js` (if helper needed)
-
-**Completion Promise:** `importToVault()` adds groups to vault. Duplicate URLs are skipped. Returns accurate counts.
-
----
-
-### TG6-006: Add Import UI to Settings [DONE]
+### TG7-001: Add View Toggle Setting [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 1.4
 
-**Goal:** Add Import button and file picker to Settings tab.
+**Goal:** Add setting for live tabs view preference.
 
 **Tasks:**
-- Add "Import Bookmarks" button to Data section (below Export)
-- Add description: "Import bookmarks or a previous export"
-- Create hidden file input (`accept=".html"`)
-- Wire button to trigger file input click
-- On file selected:
-  - Read file contents
-  - Parse with `parseNetscapeBookmarks()`
-  - Show confirmation dialog with counts
-  - On confirm: call `importToVault()`
-  - Show success toast with stats
-  - Refresh vault display
+- Add `liveTabsView` to `DEFAULT_SETTINGS` in `settings.js`
+- Default value: `'grouped'`
+- Valid values: `'grouped'` | `'ungrouped'`
+- Ensure setting persists across sessions
 
-**Confirmation Dialog Content:**
+**Files to Modify:**
+- `src/common/settings.js`
+
+**Completion Promise:** `Settings.getSetting('liveTabsView')` returns `'grouped'` by default. Setting can be updated and persists.
+
+---
+
+### TG7-002: Create View Toggle UI [DONE]
+
+**Priority:** HIGH
+**PRD Reference:** Section 1.2
+
+**Goal:** Add view toggle buttons to Live Tabs panel.
+
+**Tasks:**
+- Add view toggle container to `sidepanel.html` (in Live Tabs panel)
+- Position above the Open Tabs section, below Home Tabs
+- Create two icon buttons with radio behavior
+- Grouped icon: `▦` or grid SVG
+- Ungrouped icon: `☰` or list SVG
+- Add `.active` class to current view button
+- Wire up click handlers to switch view and save setting
+
+**HTML Structure:**
+```html
+<div class="view-toggle" role="radiogroup" aria-label="View mode">
+  <button class="view-toggle-btn active" data-view="grouped"
+          role="radio" aria-checked="true" title="Grouped by domain">
+    <span aria-hidden="true">▦</span>
+  </button>
+  <button class="view-toggle-btn" data-view="ungrouped"
+          role="radio" aria-checked="false" title="List view">
+    <span aria-hidden="true">☰</span>
+  </button>
+</div>
 ```
-Import Bookmarks?
 
-Found X groups with Y tabs.
+**Files to Modify:**
+- `src/sidepanel/sidepanel.html`
+- `src/sidepanel/sidepanel.js` (event handlers)
 
-This will add to your existing vault
-(nothing will be replaced or deleted).
+**Completion Promise:** View toggle appears in Live Tabs panel. Clicking buttons switches active state and saves setting.
 
-[Cancel] [Import]
+---
+
+### TG7-003: Style View Toggle [DONE]
+
+**Priority:** HIGH
+**PRD Reference:** Section 1.2
+
+**Goal:** Style the view toggle to match the Tab Goblin design system.
+
+**Tasks:**
+- Add `.view-toggle` container styles
+- Add `.view-toggle-btn` button styles
+- Add `.view-toggle-btn.active` active state
+- Use CSS variables for theming
+- Ensure hover/focus states for accessibility
+
+**CSS:**
+```css
+.view-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-surface);
+  border-radius: 6px;
+  padding: 2px;
+  margin-bottom: 12px;
+}
+
+.view-toggle-btn {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.view-toggle-btn:hover {
+  color: var(--text);
+}
+
+.view-toggle-btn.active {
+  background: var(--bg);
+  color: var(--primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.view-toggle-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+```
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.css`
+
+**Completion Promise:** Toggle looks good in both light and dark themes. Active state is clear. Focus states work for keyboard navigation.
+
+---
+
+## Phase 2: Ungrouped View Implementation
+
+### TG7-004: Refactor renderOpenTabsList for View Modes [DONE]
+
+**Priority:** HIGH
+**PRD Reference:** Section 1.1, 1.3
+
+**Goal:** Update render function to support both view modes.
+
+**Tasks:**
+- Read view mode setting at render time
+- Extract current grouped rendering to `renderGroupedView(tabs, container)`
+- Create `renderUngroupedView(tabs, container)` function
+- Call appropriate function based on view mode
+- Ensure view toggle updates when switching
+
+**Code Structure:**
+```javascript
+async function renderOpenTabsList(tabs) {
+  const container = document.getElementById('domainGroupsList');
+  const viewMode = await Settings.getSetting('liveTabsView') || 'grouped';
+
+  clearContainer(container);
+
+  if (viewMode === 'grouped') {
+    renderGroupedView(tabs, container);
+  } else {
+    renderUngroupedView(tabs, container);
+  }
+
+  updateViewToggleUI(viewMode);
+}
 ```
 
 **Files to Modify:**
 - `src/sidepanel/sidepanel.js`
-- `src/sidepanel/sidepanel.css` (dialog styles if needed)
 
-**Completion Promise:** Import button opens file picker. Selecting valid HTML shows confirmation dialog. Confirming imports to vault with toast feedback.
-
----
-
-### TG6-007: Import Error Handling [DONE]
-
-**Priority:** MEDIUM
-**PRD Reference:** Section 1.5
-
-**Goal:** Handle import errors gracefully.
-
-**Tasks:**
-- Handle invalid/corrupt HTML file
-- Handle file with no bookmarks
-- Handle file read errors
-- Show appropriate error toasts:
-  - "Invalid bookmark file"
-  - "No bookmarks found in file"
-  - "Failed to read file"
-- Log errors to console for debugging
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (error handling)
-- `src/common/import-export.js` (validation)
-
-**Completion Promise:** Invalid files show appropriate error messages. No crashes or unhandled exceptions.
+**Completion Promise:** Changing view setting causes different render function to be called. Grouped view works same as before.
 
 ---
 
-## Phase 3: Keyboard Shortcut
-
-### TG6-008: Add Commands to Manifest [DONE]
+### TG7-005: Implement Ungrouped View Rendering [DONE]
 
 **Priority:** HIGH
-**PRD Reference:** Section 2.1
+**PRD Reference:** Section 1.3
 
-**Goal:** Define keyboard shortcut in manifest.json.
+**Goal:** Render tabs in a flat list sorted by domain.
 
 **Tasks:**
-- Add `commands` section to manifest.json
-- Define `_execute_action` command
-- Set suggested keys:
-  - `default`: "Ctrl+Shift+G"
-  - `mac`: "Command+Shift+G"
-- Set description: "Open Tab Goblin"
+- Sort tabs by domain (alphabetically), then by title
+- Create flat list without accordion wrappers
+- Add domain badge to each tab item
+- Reuse existing tab item components where possible
+- Include checkbox, favicon, title, URL, action buttons
 
-**Manifest Addition:**
-```json
-{
-  "commands": {
-    "_execute_action": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+G",
-        "mac": "Command+Shift+G"
-      },
-      "description": "Open Tab Goblin"
-    }
+**Tab Sorting:**
+```javascript
+function renderUngroupedView(tabs, container) {
+  const sorted = [...tabs].sort((a, b) => {
+    const domainA = UrlUtils.getDomainFromUrl(a.url) || '';
+    const domainB = UrlUtils.getDomainFromUrl(b.url) || '';
+    const domainCompare = domainA.localeCompare(domainB);
+    if (domainCompare !== 0) return domainCompare;
+    return (a.title || '').localeCompare(b.title || '');
+  });
+
+  for (const tab of sorted) {
+    container.appendChild(createUngroupedTabItem(tab));
   }
 }
 ```
 
 **Files to Modify:**
-- `manifest.json`
+- `src/sidepanel/sidepanel.js`
 
-**Completion Promise:** After extension reload, keyboard shortcut appears in `chrome://extensions/shortcuts`. Pressing shortcut toggles side panel.
+**Completion Promise:** Ungrouped view shows flat list of tabs. Tabs sorted by domain then title. Domain badge visible on each tab.
 
 ---
 
-### TG6-009: Add Shortcut Display to Settings [DONE]
+### TG7-006: Create Ungrouped Tab Item Component [DONE]
 
 **Priority:** HIGH
-**PRD Reference:** Section 2.2
+**PRD Reference:** Section 1.3
 
-**Goal:** Display current keyboard shortcut in Settings with OS-appropriate formatting.
+**Goal:** Create tab item component for ungrouped view.
 
 **Tasks:**
-- Add "Keyboard Shortcut" section to Settings (between Appearance and Data)
-- Implement `getCurrentShortcut()`:
-  - Call `chrome.commands.getAll()`
-  - Find `_execute_action` command
-  - Return shortcut string or null
-- Implement `formatShortcutForOS(shortcut)`:
-  - Detect OS via `navigator.platform`
-  - Replace "Ctrl" with "Cmd" on macOS
-  - Keep "Ctrl" on Windows/Linux
-- Display current shortcut or "Not set"
-- Style shortcut as keyboard keys (rounded boxes)
+- Create `createUngroupedTabItem(tab)` function
+- Include: checkbox, favicon, title (truncated), domain badge, actions
+- Actions: Protect button, Vault button, Close button
+- Wire checkbox to `selectedTabIds` tracking
+- Match styling with grouped view tab items
 
-**OS Detection:**
-```javascript
-const isMac = navigator.platform.toLowerCase().includes('mac');
+**HTML Structure:**
+```html
+<div class="ungrouped-tab-item">
+  <input type="checkbox" class="tab-checkbox">
+  <img class="tab-favicon">
+  <div class="tab-info">
+    <div class="tab-title">Page Title</div>
+    <div class="tab-domain">example.com</div>
+  </div>
+  <div class="tab-actions">
+    <button class="protect-btn">Shield</button>
+    <button class="vault-btn">Vault</button>
+    <button class="close-btn">X</button>
+  </div>
+</div>
 ```
 
 **Files to Modify:**
 - `src/sidepanel/sidepanel.js`
-- `src/sidepanel/sidepanel.css` (keyboard key styles)
+- `src/sidepanel/sidepanel.css` (ungrouped item styles)
 
-**Completion Promise:** Settings shows "Keyboard Shortcut" section. Current shortcut displayed with correct OS modifier. "Not set" shown if no shortcut configured.
+**Completion Promise:** Ungrouped tab items display with all expected elements. Checkboxes work. Action buttons work.
 
 ---
 
-### TG6-010: Add Configure Shortcut Link [DONE]
+### TG7-007: Style Ungrouped Tab Items [DONE]
+
+**Priority:** MEDIUM
+**PRD Reference:** Section 1.3
+
+**Goal:** Style ungrouped tab items to match design system.
+
+**Tasks:**
+- Style `.ungrouped-tab-item` container
+- Style domain badge (small, muted text)
+- Ensure consistent spacing with grouped items
+- Add hover and selected states
+- Support both light and dark themes
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.css`
+
+**Completion Promise:** Ungrouped items look consistent with grouped view. Domain badge is visible but not prominent. Hover and selection states work.
+
+---
+
+## Phase 3: Button State Management
+
+### TG7-008: Disable Vault Selected When Empty [DONE]
 
 **Priority:** HIGH
+**PRD Reference:** Section 2.2
+
+**Goal:** Disable "Vault Selected" button when no tabs are selected.
+
+**Tasks:**
+- Add `disabled` attribute management to button
+- Update button state in `updateSelectedCount()` function
+- Set initial state to disabled on render
+- Enable when `selectedTabIds.size > 0`
+- Style disabled state
+
+**Code:**
+```javascript
+function updateSelectedCount() {
+  const count = selectedTabIds.size;
+  document.getElementById('selectedCount').textContent = `${count} selected`;
+
+  const vaultSelectedBtn = document.getElementById('vaultSelectedBtn');
+  vaultSelectedBtn.disabled = count === 0;
+}
+```
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js`
+- `src/sidepanel/sidepanel.css` (disabled button styles)
+
+**Completion Promise:** "Vault Selected" button is disabled when 0 tabs selected. Enabled when any tab selected. Visual disabled state is clear.
+
+---
+
+### TG7-009: Disable Domain Vault Button When Empty [DONE]
+
+**Priority:** HIGH
+**PRD Reference:** Section 2.2
+
+**Goal:** Disable domain "Vault" button when no tabs selected in that group.
+
+**Tasks:**
+- Add class to domain vault button for selection (e.g., `.domain-vault-btn`)
+- Create `updateDomainVaultButton(groupCard)` function
+- Check if any tabs in group are selected
+- Disable button if none selected, enable if any selected
+- Call on checkbox change events
+- Call on initial render
+
+**Code:**
+```javascript
+function updateDomainVaultButton(groupCard) {
+  const vaultBtn = groupCard.querySelector('.domain-vault-btn');
+  const anySelected = Array.from(groupCard.querySelectorAll('.domain-tab-checkbox'))
+    .some(cb => cb.checked);
+  vaultBtn.disabled = !anySelected;
+}
+```
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js`
+
+**Completion Promise:** Domain "Vault" buttons are disabled by default. Enable when any tab in that group is selected.
+
+---
+
+### TG7-010: Style Disabled Buttons [DONE]
+
+**Priority:** MEDIUM
 **PRD Reference:** Section 2.3
 
-**Goal:** Provide link to Chrome's shortcut configuration page.
+**Goal:** Ensure disabled buttons have clear visual indicator.
 
 **Tasks:**
-- Add "Configure in Chrome Settings" button/link below shortcut display
-- On click: open `chrome://extensions/shortcuts` in new tab
-- Use `chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })`
-- Add brief instruction text if shortcut is "Not set"
+- Add `.btn:disabled` styles
+- Reduce opacity
+- Change cursor to `not-allowed`
+- Test in both light and dark themes
+
+**CSS:**
+```css
+.btn:disabled,
+.btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+```
 
 **Files to Modify:**
-- `src/sidepanel/sidepanel.js`
+- `src/sidepanel/sidepanel.css`
 
-**Completion Promise:** Clicking "Configure" opens Chrome's extension shortcuts page in new tab.
+**Completion Promise:** Disabled buttons are visually distinct. Cursor shows they're not clickable. Works in all themes.
 
 ---
 
-## Phase 4: Polish and Testing
+## Phase 4: Selection Behavior Verification
 
-### TG6-011: Settings Section Ordering [DONE]
+### TG7-011: Verify Group Checkbox Behavior [DONE]
 
 **Priority:** MEDIUM
-**PRD Reference:** UI Specifications
-
-**Goal:** Ensure Settings sections are in correct order.
-
-**Correct Order:**
-1. Appearance (Theme Mode, Theme Palette)
-2. Keyboard Shortcut (Current shortcut, Configure link)
-3. Data (Export, Import)
-4. Home Tabs (Pattern list, Add pattern)
-
-**Tasks:**
-- Review Settings render function
-- Ensure sections render in correct order
-- Verify visual spacing between sections
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-
-**Completion Promise:** Settings tab sections appear in order: Appearance, Keyboard Shortcut, Data, Home Tabs.
-
----
-
-### TG6-012: Import/Export Round-Trip Test [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.3
-
-**Goal:** Verify export can be re-imported without data loss.
-
-**Test Steps:**
-1. Create vault with multiple groups and tabs
-2. Export vault
-3. Clear vault (or use fresh profile)
-4. Import exported file
-5. Verify all groups and tabs restored correctly
-6. Verify timestamps preserved
-
-**Manual Testing Checklist:**
-- [ ] Export creates valid HTML file
-- [ ] File opens in text editor with correct structure
-- [ ] File imports into Chrome bookmarks correctly
-- [ ] File imports back into Tab Goblin correctly
-- [ ] Group names preserved
-- [ ] Tab titles preserved
-- [ ] Tab URLs preserved
-- [ ] No data corruption
-
-**Completion Promise:** Exported vault can be imported back with all data intact.
-
----
-
-### TG6-013: Cross-Browser Import Test [DONE]
-
-**Priority:** MEDIUM
-**PRD Reference:** Section 1.3
-
-**Goal:** Verify import works with exports from other browsers.
-
-**Test Steps:**
-1. Export bookmarks from Chrome
-2. Export bookmarks from Firefox (if available)
-3. Export bookmarks from Edge (if available)
-4. Import each into Tab Goblin
-5. Verify groups and tabs created correctly
-
-**Edge Cases to Test:**
-- [ ] Chrome Bookmarks Bar folder
-- [ ] Chrome Other Bookmarks folder
-- [ ] Nested folder structures (3+ levels)
-- [ ] Special characters in titles
-- [ ] Very long URLs
-- [ ] Bookmarks without titles
-
-**Completion Promise:** Chrome, Firefox, and Edge bookmark exports import correctly into Tab Goblin.
-
----
-
-### TG6-014: Shortcut Functionality Test [DONE]
-
-**Priority:** HIGH
 **PRD Reference:** Section 2.1
 
-**Goal:** Verify keyboard shortcut works correctly.
+**Goal:** Verify and document that group checkbox selects all tabs.
 
-**Test Steps:**
-1. Install/reload extension
-2. Verify default shortcut appears in `chrome://extensions/shortcuts`
-3. Press Ctrl+Shift+G (or Cmd+Shift+G on Mac)
-4. Verify side panel opens
-5. Press shortcut again
-6. Verify side panel closes (toggles)
-7. Customize shortcut in Chrome settings
-8. Verify Settings displays new shortcut
+**Current Behavior (verify still works):**
+- Group checkbox checked → all child checkboxes checked
+- Group checkbox unchecked → all child checkboxes unchecked
+- Some children checked → group checkbox shows indeterminate
 
-**Completion Promise:** Keyboard shortcut toggles side panel. Settings displays current shortcut correctly.
+**Tasks:**
+- Test group checkbox behavior manually
+- Verify `updateDomainGroupCheckbox` function works correctly
+- Ensure checkbox state syncs with `selectedTabIds`
+- Fix any issues discovered
+
+**Test Cases:**
+- [ ] Check group checkbox → all tabs selected, count updates
+- [ ] Uncheck group checkbox → all tabs deselected, count updates
+- [ ] Check some tabs → group shows indeterminate
+- [ ] Check all tabs manually → group checkbox becomes checked
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js` (if fixes needed)
+
+**Completion Promise:** Group checkbox selects/deselects all tabs. Indeterminate state shows for partial selection.
 
 ---
 
-### TG6-015: Regression Testing [DONE]
+### TG7-012: Multi-Group Selection Test [DONE]
+
+**Priority:** MEDIUM
+**PRD Reference:** Section 3.2
+
+**Goal:** Verify vaulting tabs from multiple groups works.
+
+**Test Steps:**
+1. Open tabs from 3+ different domains
+2. Select group A checkbox (all A tabs)
+3. Select group B checkbox (all B tabs)
+4. Click "Vault Selected"
+5. Verify: A and B tabs vaulted as separate groups in vault
+
+**Tasks:**
+- Test manually
+- Fix any issues discovered
+- Document expected behavior
+
+**Completion Promise:** Selecting multiple group checkboxes and clicking "Vault Selected" creates separate vault groups per domain.
+
+---
+
+## Phase 5: Polish and Testing
+
+### TG7-013: View Toggle Keyboard Navigation [DONE]
+
+**Priority:** MEDIUM
+
+**Goal:** Ensure view toggle is keyboard accessible.
+
+**Tasks:**
+- Verify arrow keys switch between toggle buttons
+- Verify Enter/Space activates buttons
+- Verify focus indicators are visible
+- Add proper ARIA attributes
+
+**ARIA Requirements:**
+- `role="radiogroup"` on container
+- `role="radio"` on buttons
+- `aria-checked="true/false"` updated on toggle
+
+**Files to Modify:**
+- `src/sidepanel/sidepanel.js`
+- `src/sidepanel/sidepanel.html`
+
+**Completion Promise:** View toggle is fully keyboard navigable. Screen readers announce state correctly.
+
+---
+
+### TG7-014: Integration Testing [DONE]
 
 **Priority:** HIGH
 
-**Goal:** Verify all existing functionality works after changes.
+**Goal:** Test all features work together.
 
-**Test Cases:**
-- [ ] Vault operations (add, remove, restore groups)
-- [ ] Tab vaulting (manual, vault all, vault domain)
-- [ ] Home tab protection
-- [ ] History functionality
-- [ ] Theme switching (light/dark, all palettes)
-- [ ] Drag-and-drop between groups
-- [ ] Copy to clipboard
-- [ ] Search functionality
-- [ ] Keyboard navigation
+**Test Matrix:**
 
-**Completion Promise:** All existing functionality works correctly. No regressions from v5.
+| Scenario | Expected Result |
+|----------|-----------------|
+| Switch to ungrouped, select tabs, vault | Tabs vaulted, correct groups created |
+| Switch back to grouped, verify selection | Selection cleared on view change |
+| Grouped: select group, vault | All group tabs vaulted |
+| Ungrouped: select multiple domains' tabs | Vaulted as separate domain groups |
+| No selection, both buttons disabled | Vault buttons disabled |
+| Select 1 tab, buttons enabled | Vault Selected and domain Vault enabled |
+
+**Completion Promise:** All test scenarios pass. No regressions from v6.
+
+---
+
+### TG7-015: Code Cleanup [DONE]
+
+**Priority:** LOW
+
+**Goal:** Clean up code and remove any debug statements.
+
+**Tasks:**
+- Remove any `console.log` debug statements
+- Ensure consistent code style
+- Add comments for complex logic
+- Verify no unused code
+
+**Completion Promise:** No debug statements in production code. Code is clean and consistent.
 
 ---
 
@@ -441,40 +486,45 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 
 | Priority | Tickets | Description |
 |----------|---------|-------------|
-| HIGH | TG6-001 to TG6-006, TG6-008 to TG6-010, TG6-012, TG6-014, TG6-015 | Core import/export, shortcut, testing |
-| MEDIUM | TG6-007, TG6-011, TG6-013 | Error handling, polish, cross-browser |
+| HIGH | TG7-001 to TG7-006, TG7-008, TG7-009, TG7-014 | Core features, button states, testing |
+| MEDIUM | TG7-007, TG7-010 to TG7-013 | Styling, verification, accessibility |
+| LOW | TG7-015 | Code cleanup |
 
 ---
 
 ## Dependency Graph
 
 ```
-TG6-001 (module) → TG6-002 (export) → TG6-003 (export UI)
-TG6-001 (module) → TG6-004 (parser) → TG6-005 (import) → TG6-006 (import UI) → TG6-007 (errors)
-TG6-008 (manifest) → TG6-009 (display) → TG6-010 (configure link)
-TG6-003 + TG6-006 → TG6-011 (section order)
-TG6-002 + TG6-005 → TG6-012 (round-trip test)
-TG6-004 → TG6-013 (cross-browser test)
-TG6-008 + TG6-009 → TG6-014 (shortcut test)
-All → TG6-015 (regression)
+TG7-001 (setting) ─┬─► TG7-002 (toggle UI) → TG7-003 (toggle styles)
+                   │
+                   └─► TG7-004 (refactor) → TG7-005 (ungrouped render) → TG7-006 (tab item) → TG7-007 (item styles)
+
+TG7-008 (vault selected disabled) ─┐
+TG7-009 (domain vault disabled) ───┼─► TG7-010 (disabled styles)
+                                   │
+TG7-011 (group checkbox verify) ───┴─► TG7-012 (multi-group test)
+
+TG7-002 → TG7-013 (keyboard nav)
+
+All → TG7-014 (integration test) → TG7-015 (cleanup)
 ```
 
 ---
 
 ## Recommended Order
 
-1. **TG6-001** — Create import/export module
-2. **TG6-002** — Implement export function
-3. **TG6-003** — Add export UI
-4. **TG6-004** — Implement import parser
-5. **TG6-005** — Implement import to vault
-6. **TG6-006** — Add import UI
-7. **TG6-007** — Import error handling
-8. **TG6-008** — Add commands to manifest
-9. **TG6-009** — Add shortcut display
-10. **TG6-010** — Add configure link
-11. **TG6-011** — Settings section ordering
-12. **TG6-012** — Round-trip test
-13. **TG6-013** — Cross-browser test
-14. **TG6-014** — Shortcut test
-15. **TG6-015** — Regression testing
+1. **TG7-001** — Add view toggle setting
+2. **TG7-002** — Create view toggle UI
+3. **TG7-003** — Style view toggle
+4. **TG7-004** — Refactor render for view modes
+5. **TG7-005** — Implement ungrouped rendering
+6. **TG7-006** — Create ungrouped tab item
+7. **TG7-007** — Style ungrouped items
+8. **TG7-008** — Disable Vault Selected when empty
+9. **TG7-009** — Disable domain Vault when empty
+10. **TG7-010** — Style disabled buttons
+11. **TG7-011** — Verify group checkbox behavior
+12. **TG7-012** — Test multi-group selection
+13. **TG7-013** — View toggle keyboard nav
+14. **TG7-014** — Integration testing
+15. **TG7-015** — Code cleanup

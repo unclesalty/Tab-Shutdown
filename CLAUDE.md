@@ -8,49 +8,40 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-**v6 In Progress** — Import/Export and Keyboard Shortcuts:
+**v7 Complete** — Live Tabs View Improvements:
+- View toggle: switch between grouped (accordion) and ungrouped (flat list) views
+- Ungrouped view: tabs sorted by domain, displayed with domain badges
+- Button state management: Vault buttons disabled until tabs selected
+- Group checkbox behavior: selecting group selects all tabs in group
+- Multi-group vaulting: vault from multiple domains in one action
+
+**v6 Complete** (archived):
 - Import/Export in Netscape Bookmark HTML format (Chrome-compatible)
 - Keyboard shortcut to toggle side panel (Ctrl/Cmd+Shift+G)
 - OS-specific shortcut display in Settings (macOS shows Cmd, Windows shows Ctrl)
 - Link to Chrome shortcut configuration page
+- Code review fixes: concurrency locks, dialog consolidation, batch operations
 
 **v5 Complete** (archived):
-- Fixed home tab manual close and pattern cleanup on removal
-- Fixed history behavior: duplicates, vault match prevention, collapsed default, bottom position
-- Vault UI: icon buttons for items/groups, copy to clipboard, drag-drop refresh
-- Added 5 light mode theme palettes (matching dark themes)
-- Removed deprecated UI: Move Up/Down buttons, Edit Patterns from Live Tabs
+- Light mode themes (5 palettes matching dark themes)
+- Vault UI improvements, history fixes
 
 **v4 Complete** (archived):
-- Architecture refactor — popup archived, shared modules extracted
-- Single `isSkippableUrl()` in `url-utils.js`
-- CSS syntax errors fixed, universal transition rule replaced
-- ARIA attributes complete, custom dialogs replace native
-- Storage concurrency protection added
+- Architecture refactor, shared modules, concurrency protection
 
 **v3 Complete** (archived):
-- Bug fix: Live Tabs panel not displaying open tabs
-- Rebrand: "Tab Vault" to "Tab Goblin"
-- Remove emojis from UI
-- Simplified header design
-- Theme system (light/dark/system/custom modes)
-- 5 dark theme palettes
-- Tab navigation: click active tabs to navigate, auto-navigate on restore
+- Theme system, tab navigation, rebrand to "Tab Goblin"
 
 **v2 Complete** (archived):
-- Side panel UI with tab-based navigation (Vault, Live Tabs, Settings)
-- Unified accordion display for live tabs by domain
-- Drag-and-drop between vault groups
-- Home tab protection with quick-add/remove
-- Keyboard navigation and accessibility
+- Side panel UI, drag-and-drop, home tab protection
 
 ## Key Documents
 
-- **PRD.md** — Full product requirements for v6
+- **PRD.md** — Full product requirements for v7
 - **TICKETS.md** — Implementation tickets (check for `[DONE]` status)
 - **PROMPT.md** — Ralph Loop instructions (ONLY used with `/ralph-loop` command)
-- **context_items/opus-cursor-review.md** — Comprehensive code review (v3 baseline)
-- **archive/** — Completed v1-v5 iteration documents
+- **context_items/opus-cursor-review.md** — Comprehensive code review (v6 baseline, fixes applied)
+- **archive/** — Completed v1-v6 iteration documents
 - **documentation/** — User guide, developer guide, contributing guide
 
 ## Important: Ralph Loop Usage
@@ -77,28 +68,24 @@ chrome_tab_shutdown/
 ├── src/
 │   ├── sidepanel/        # Side panel UI (primary interface)
 │   │   ├── sidepanel.html
-│   │   ├── sidepanel.css  # Theme system here
+│   │   ├── sidepanel.css  # Theme system + component styles
 │   │   └── sidepanel.js
 │   ├── background/       # Service worker
 │   │   └── service-worker.js
 │   ├── common/           # Shared modules
-│   │   ├── storage.js    # Vault storage with VaultStorage class
-│   │   ├── home-tabs.js  # Home tab patterns with HomeTabStorage
-│   │   ├── settings.js   # User settings with Settings class
+│   │   ├── storage.js    # Vault storage with concurrency locking
+│   │   ├── home-tabs.js  # Home tab patterns with batch operations
+│   │   ├── settings.js   # User settings with concurrency locking
+│   │   ├── history.js    # History storage with concurrency locking
 │   │   ├── themes.js     # Theme definitions and Themes API
-│   │   ├── history.js    # History storage operations
-│   │   ├── ui-helpers.js # pluralizeTabs, clearContainer, showToast, setLoading
-│   │   ├── url-utils.js  # isSkippableUrl, getDomainFromUrl, normalizeUrl
-│   │   └── import-export.js  # NEW v6: Netscape bookmark import/export
-│   ├── popup/            # DEPRECATED: Unreachable (no default_popup in manifest)
-│   │   ├── popup.html    # Archive candidate
-│   │   ├── popup.css     # Archive candidate
-│   │   └── popup.js      # Archive candidate (~75% duplicates sidepanel.js)
+│   │   ├── dialog.js     # Unified dialog system (confirm/prompt)
+│   │   ├── ui-helpers.js # pluralizeTabs, clearContainer, showToast
+│   │   ├── url-utils.js  # isSkippableUrl, getDomainFromUrl, generateId
+│   │   └── import-export.js  # Netscape bookmark import/export
 │   └── assets/           # Icons
 ├── context_items/        # Code reviews and context documents
 ├── documentation/        # User and developer docs
-├── archive/              # Completed iteration documents
-├── images_context_input/ # Reference images (palettes, screenshots)
+├── archive/              # Completed iteration documents (v1-v6)
 ├── PRD.md
 ├── TICKETS.md
 ├── PROMPT.md
@@ -249,7 +236,33 @@ chrome.tabs.onUpdated.addListener(callback);
 - **Single source of truth** — One implementation per function across codebase
 - **HTML escaping** — Escape user content when generating HTML for export
 
-## v6 Implementation Notes
+## v7 Implementation Notes
+
+### Live Tabs View Toggle
+- Two view modes: `'grouped'` (default) and `'ungrouped'`
+- Setting: `liveTabsView` in Settings storage
+- Toggle UI: icon buttons with radio behavior in Live Tabs panel
+- Grouped: domain accordions (existing behavior)
+- Ungrouped: flat list sorted by domain, then title
+
+### Ungrouped View
+- Tabs sorted alphabetically by domain, then by title within domain
+- Each tab shows domain badge for context
+- Same selection/action behavior as grouped view
+- Selection persists when switching views (cleared)
+
+### Button State Management
+- "Vault Selected" button: disabled when `selectedTabIds.size === 0`
+- Domain "Vault" button: disabled when no tabs selected in that group
+- Visual: `opacity: 0.5`, `cursor: not-allowed`
+- State updates on every checkbox change
+
+### Group Checkbox
+- Clicking group checkbox selects/deselects all tabs in group
+- Indeterminate state when partially selected
+- Syncs with `selectedTabIds` set
+
+## v6 Implementation Notes (Complete)
 
 ### Import/Export Feature
 - Uses Netscape Bookmark HTML format (same as Chrome bookmark export)

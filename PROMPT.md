@@ -1,12 +1,12 @@
-# PROMPT: Tab Goblin v6
+# PROMPT: Tab Goblin v7
 
 ## Role
 
-You are implementing **Tab Goblin v6**, adding import/export functionality and keyboard shortcut support. Work through the tickets in `TICKETS.md` sequentially, one at a time.
+You are implementing **Tab Goblin v7**, adding Live Tabs view improvements. Work through the tickets in `TICKETS.md` sequentially, one at a time.
 
 ## Context
 
-**v5 is complete.** The extension has working:
+**v6 is complete.** The extension has working:
 - Side panel UI with tab-based navigation
 - Vault storage and retrieval
 - Shutdown (vault) and restore operations
@@ -18,18 +18,20 @@ You are implementing **Tab Goblin v6**, adding import/export functionality and k
 - Icon buttons for vault items and groups
 - Copy to clipboard functionality
 - Drag-and-drop between vault groups
+- Import/Export in Netscape Bookmark HTML format
+- Keyboard shortcut to toggle side panel
 
-**v6 focuses on:**
-- Import/Export in Netscape Bookmark HTML format (Chrome-compatible)
-- Keyboard shortcut to toggle side panel (Ctrl/Cmd+Shift+G)
-- OS-specific shortcut display in Settings
-- Link to Chrome shortcut configuration
+**v7 focuses on:**
+- View toggle: switch between grouped and ungrouped views
+- Ungrouped view: flat list sorted by domain with domain badges
+- Button state management: Vault buttons disabled until tabs selected
+- Group checkbox behavior improvements
 
 ## References
 
-- **PRD.md** — Product requirements for v6
-- **TICKETS.md** — Implementation tickets (TG6-001 to TG6-015)
-- **archive/** — Completed v1-v5 documents
+- **PRD.md** — Product requirements for v7
+- **TICKETS.md** — Implementation tickets (TG7-001 to TG7-015)
+- **archive/** — Completed v1-v6 documents
 
 ## Technical Context
 
@@ -122,41 +124,36 @@ const modifier = isMac ? 'Cmd' : 'Ctrl';
 When all tickets in `TICKETS.md` are marked `[DONE]`, output:
 
 ```
-Goblin_v6_Import_Export_Complete!
+PHASE 7 COMPLETE!
 ```
-
-Then proceed to the **Final Review Phase**.
 
 ## Final Review Phase
 
 After all tickets are done:
 
-### Step 1: Code Simplifier
-Run `/code-simplifier` to refine the codebase.
+### Step 1: Verify View Toggle
+- Toggle between grouped and ungrouped views works
+- Setting persists across sessions
+- Keyboard navigation (arrow keys) works
 
-### Step 2: Code Review
-Run `/code-review` on the implementation.
+### Step 2: Verify Ungrouped View
+- Tabs sorted by domain, then by title
+- Domain badges visible on each tab
+- All action buttons work (vault, close, protect)
 
-### Step 3: Security Review
-Run `/security-review`
+### Step 3: Verify Button States
+- "Vault Selected" disabled when no tabs selected
+- Domain "Vault" button disabled when no tabs selected in group
+- Buttons enable when tabs are selected
 
-### Step 4: Import/Export Verification
-- Export vault with multiple groups
-- Verify HTML file structure is valid
-- Import into Chrome bookmarks (should work)
-- Import back into Tab Goblin (round-trip)
-- Import Chrome bookmark export (cross-browser)
+### Step 4: Verify Group Checkbox
+- Group checkbox selects/deselects all tabs
+- Indeterminate state shows for partial selection
+- Selection count updates correctly
 
-### Step 5: Shortcut Verification
-- Verify Ctrl/Cmd+Shift+G toggles side panel
-- Verify Settings displays current shortcut
-- Verify "Configure" link opens Chrome shortcuts
-- Customize shortcut, verify Settings updates
-
-### Step 6: Regression Testing
-- Verify all existing vault operations work
+### Step 5: Regression Testing
+- Verify existing vault operations work
 - Verify themes work (light and dark)
 - Verify home tab protection works
-- Verify history works
 
 Once all review steps pass, the loop is complete.

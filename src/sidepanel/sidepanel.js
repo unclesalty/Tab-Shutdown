@@ -389,6 +389,10 @@ async function renderLiveTabsPanel() {
   const homePatterns = await HomeTabs.getHomePatterns();
   const searchQuery = currentSearchQuery.toLowerCase();
 
+  // Update view toggle UI based on saved setting
+  const viewMode = await Settings.getSetting('liveTabsView') || 'grouped';
+  updateViewToggleUI(viewMode);
+
   // Build a map of open tabs by URL for quick lookup
   const openTabsByUrl = new Map();
   const regularTabs = [];
@@ -566,10 +570,11 @@ async function removeTabFromHome(tabUrl, patterns) {
   }
 }
 
-// Render the Open Tabs grouped by domain
-function renderOpenTabsList(tabs) {
+// Render the Open Tabs based on current view mode
+async function renderOpenTabsList(tabs) {
   const container = document.getElementById('domainGroupsList');
   const countEl = document.getElementById('openTabsCount');
+  const viewMode = await Settings.getSetting('liveTabsView') || 'grouped';
 
   clearContainer(container);
   countEl.textContent = tabs.length;
@@ -583,6 +588,15 @@ function renderOpenTabsList(tabs) {
     return;
   }
 
+  if (viewMode === 'grouped') {
+    renderGroupedView(tabs, container);
+  } else {
+    renderUngroupedView(tabs, container);
+  }
+}
+
+// Render tabs grouped by domain (accordion style)
+function renderGroupedView(tabs, container) {
   // Group tabs by domain
   const domainGroups = UrlUtils.groupTabsByDomain(tabs);
 
@@ -596,6 +610,131 @@ function renderOpenTabsList(tabs) {
     const domainTabs = domainGroups[domain];
     container.appendChild(createDomainGroupCard(domain, domainTabs));
   }
+}
+
+// Render tabs in flat list sorted by domain
+function renderUngroupedView(tabs, container) {
+  // Sort tabs by domain, then by title
+  const sorted = [...tabs].sort((a, b) => {
+    const domainA = UrlUtils.getDomainFromUrl(a.url) || '';
+    const domainB = UrlUtils.getDomainFromUrl(b.url) || '';
+    const domainCompare = domainA.localeCompare(domainB);
+    if (domainCompare !== 0) return domainCompare;
+    return (a.title || '').localeCompare(b.title || '');
+  });
+
+  for (const tab of sorted) {
+    container.appendChild(createUngroupedTabItem(tab));
+  }
+}
+
+// Create a tab item for ungrouped view
+function createUngroupedTabItem(tab) {
+  const domain = UrlUtils.getDomainFromUrl(tab.url) || 'Other';
+
+  const item = document.createElement('div');
+  item.className = 'ungrouped-tab-item';
+  item.dataset.tabId = tab.id;
+
+  // Checkbox for selection
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.className = 'ungrouped-tab-checkbox';
+  checkbox.checked = false;
+  checkbox.addEventListener('change', () => {
+    if (checkbox.checked) {
+      selectedTabIds.add(tab.id);
+    } else {
+      selectedTabIds.delete(tab.id);
+    }
+    updateSelectedCount();
+  });
+
+  // Favicon
+  const favicon = createFavicon(tab.favIconUrl);
+
+  // Tab info with domain badge
+  const info = document.createElement('div');
+  info.className = 'tab-info';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'tab-title-row';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'tab-title';
+  titleEl.textContent = tab.title || 'Untitled';
+  titleRow.appendChild(titleEl);
+
+  info.appendChild(titleRow);
+
+  // Domain badge
+  const domainBadge = document.createElement('div');
+  domainBadge.className = 'tab-domain-badge';
+  domainBadge.textContent = domain;
+  info.appendChild(domainBadge);
+
+  // Action buttons
+  const actions = document.createElement('div');
+  actions.className = 'tab-item-actions';
+
+  // Vault button
+  const vaultBtn = document.createElement('button');
+  vaultBtn.className = 'tab-action-btn vault-btn';
+  vaultBtn.textContent = '\u2913';
+  vaultBtn.title = 'Vault this tab (save and close)';
+  vaultBtn.setAttribute('aria-label', 'Vault this tab');
+  vaultBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await vaultSingleTab(tab);
+  });
+
+  // Close button
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'tab-action-btn close-btn';
+  closeBtn.textContent = '\u{2715}';
+  closeBtn.title = 'Close tab to history';
+  closeBtn.setAttribute('aria-label', 'Close tab to history');
+  closeBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await closeTabToHistory(tab.id);
+  });
+
+  // Protect button
+  const protectBtn = document.createElement('button');
+  protectBtn.className = 'tab-action-btn protect-btn-icon';
+  protectBtn.textContent = '\u{1F6E1}';
+  protectBtn.title = 'Protect from shutdown (add to Home Tabs)';
+  protectBtn.setAttribute('aria-label', 'Add to Home Tabs');
+  protectBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try {
+      const currentTab = await chrome.tabs.get(tab.id);
+      if (currentTab && currentTab.url) {
+        await addTabToHome(currentTab.url);
+      } else {
+        showToast('Error: Tab no longer exists', 'error');
+      }
+    } catch (err) {
+      showToast('Error: Tab no longer exists', 'error');
+    }
+  });
+
+  actions.appendChild(vaultBtn);
+  actions.appendChild(closeBtn);
+  actions.appendChild(protectBtn);
+
+  item.appendChild(checkbox);
+  item.appendChild(favicon);
+  item.appendChild(info);
+  item.appendChild(actions);
+
+  // Click on row navigates to tab (except on checkbox or buttons)
+  item.addEventListener('click', async (e) => {
+    if (e.target === checkbox || e.target.closest('button')) return;
+    await navigateToTab(tab.id);
+  });
+
+  return item;
 }
 
 // Create a domain group card (accordion style)
@@ -636,6 +775,7 @@ function createDomainGroupCard(domain, tabs) {
       cb.dispatchEvent(new Event('change'));
     });
     updateDomainGroupCheckbox(card);
+    updateDomainVaultButton(card);
   });
 
   const info = document.createElement('div');
@@ -656,12 +796,17 @@ function createDomainGroupCard(domain, tabs) {
   actions.className = 'domain-group-actions';
 
   const vaultBtn = document.createElement('button');
-  vaultBtn.className = 'btn btn-primary btn-small';
+  vaultBtn.className = 'btn btn-primary btn-small domain-vault-btn';
   vaultBtn.textContent = 'Vault';
-  vaultBtn.title = 'Vault all tabs from this domain';
+  vaultBtn.title = 'Vault selected tabs from this domain';
+  vaultBtn.disabled = true; // Disabled until tabs are selected
   vaultBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    await vaultDomainTabs(domain, tabs);
+    // Only vault selected tabs from this domain
+    const selectedInGroup = tabs.filter(t => selectedTabIds.has(t.id));
+    if (selectedInGroup.length > 0) {
+      await vaultDomainTabs(domain, selectedInGroup);
+    }
   });
 
   actions.appendChild(vaultBtn);
@@ -726,6 +871,7 @@ function createDomainTabItem(tab, groupCard) {
     }
     updateSelectedCount();
     updateDomainGroupCheckbox(groupCard);
+    updateDomainVaultButton(groupCard);
   });
 
   const favicon = createFavicon(tab.favIconUrl);
@@ -807,6 +953,16 @@ function updateDomainGroupCheckbox(groupCard) {
 
   groupCheckbox.checked = allChecked;
   groupCheckbox.indeterminate = someChecked && !allChecked;
+}
+
+// Update domain vault button disabled state based on selection
+function updateDomainVaultButton(groupCard) {
+  const vaultBtn = groupCard.querySelector('.domain-vault-btn');
+  if (!vaultBtn) return;
+
+  const anySelected = Array.from(groupCard.querySelectorAll('.domain-tab-checkbox'))
+    .some(cb => cb.checked);
+  vaultBtn.disabled = !anySelected;
 }
 
 // Vault all tabs from a specific domain
@@ -1227,8 +1383,8 @@ function createGroupCard(group) {
   const restoreBtn = document.createElement('button');
   restoreBtn.className = 'tab-action-btn group-action-btn restore-btn';
   restoreBtn.textContent = '\u2197'; // ↗ North East Arrow
-  restoreBtn.title = 'Restore All';
-  restoreBtn.setAttribute('aria-label', 'Restore all tabs');
+  restoreBtn.title = 'Open All';
+  restoreBtn.setAttribute('aria-label', 'Open all tabs');
   restoreBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     await restoreGroup(group.id);
@@ -1343,7 +1499,7 @@ function createTabItem(tab, groupId) {
   } else {
     // Inactive tab - not clickable, show tooltip explaining why
     item.classList.add('inactive-tab');
-    item.title = 'Tab not open \u2014 use Restore to open';
+    item.title = 'Tab not open \u2014 click Open to open';
     item.setAttribute('aria-label', `${tab.title || 'Tab'} (not open)`);
   }
 
@@ -1363,8 +1519,8 @@ function createTabItem(tab, groupId) {
   const restoreBtn = document.createElement('button');
   restoreBtn.className = 'tab-action-btn vault-item-btn restore-btn';
   restoreBtn.textContent = '\u2197'; // ↗ North East Arrow
-  restoreBtn.title = 'Restore';
-  restoreBtn.setAttribute('aria-label', 'Restore tab');
+  restoreBtn.title = 'Open';
+  restoreBtn.setAttribute('aria-label', 'Open tab');
   restoreBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     await restoreTab(groupId, tab.id);
@@ -1458,6 +1614,17 @@ function setupEventListeners() {
   document.getElementById('importBookmarksBtn').addEventListener('click', triggerImportFilePicker);
   document.getElementById('importFileInput').addEventListener('change', handleImportFile);
 
+  // View toggle buttons
+  document.querySelectorAll('.view-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => handleViewToggle(btn.dataset.view));
+  });
+
+  // View toggle keyboard navigation
+  const viewToggle = document.querySelector('.view-toggle');
+  if (viewToggle) {
+    viewToggle.addEventListener('keydown', handleViewToggleKeydown);
+  }
+
   // Keyboard shortcut configuration
   document.getElementById('configureShortcutBtn').addEventListener('click', openShortcutConfig);
 
@@ -1522,9 +1689,14 @@ function handleTabBarKeydown(e) {
   }
 }
 
-// Update selected count display
+// Update selected count display and button states
 function updateSelectedCount() {
-  document.getElementById('selectedCount').textContent = `${selectedTabIds.size} selected`;
+  const count = selectedTabIds.size;
+  document.getElementById('selectedCount').textContent = `${count} selected`;
+
+  // Enable/disable Vault Selected button based on selection
+  const vaultSelectedBtn = document.getElementById('vaultSelectedBtn');
+  vaultSelectedBtn.disabled = count === 0;
 }
 
 // Set all tab checkboxes to a specific state
@@ -1867,7 +2039,7 @@ async function executeShutdownAll() {
   }
 }
 
-// Restore a group
+// Open all tabs from a group (keeps them in vault)
 async function restoreGroup(groupId) {
   const group = await VaultStorage.getGroup(groupId);
   if (!group) {
@@ -1879,39 +2051,43 @@ async function restoreGroup(groupId) {
     const skipConfirm = await Settings.getSetting('skipLargeRestoreConfirm');
     if (!skipConfirm) {
       const confirmed = await Dialog.showModalConfirm(
-        'Restore Group',
-        `Restore ${group.tabs.length} ${pluralizeTabs(group.tabs.length)}? This will open them all in new tabs.`,
-        'Restore'
+        'Open Group',
+        `Open ${group.tabs.length} ${pluralizeTabs(group.tabs.length)}? They will remain in your vault.`,
+        'Open'
       );
       if (!confirmed) return;
     }
   }
 
   const response = await chrome.runtime.sendMessage({
-    action: 'restore-group',
-    groupId: groupId
+    action: 'duplicate-group',
+    groupId: groupId,
+    navigate: true
   });
 
   if (response.success) {
-    showToast(`Restored ${response.count} ${pluralizeTabs(response.count)}`, 'success');
+    showToast(`Opened ${response.count} ${pluralizeTabs(response.count)}`, 'success');
     await updateLiveTabCount();
+    await updateOpenTabsCache();
     await renderVaultGroups();
   } else {
     showToast('Error: ' + (response.error || 'Unknown error'), 'error');
   }
 }
 
-// Restore a single tab
+// Open a single tab from vault (keeps it in vault)
 async function restoreTab(groupId, tabId) {
   const response = await chrome.runtime.sendMessage({
-    action: 'restore-tabs',
+    action: 'duplicate-tabs',
     groupId: groupId,
-    tabIds: [tabId]
+    tabIds: [tabId],
+    navigate: true
   });
 
   if (response.success) {
-    showToast('Tab restored', 'success');
+    showToast('Tab opened', 'success');
     await updateLiveTabCount();
+    await updateOpenTabsCache();
     await renderVaultGroups();
   } else {
     showToast('Error: ' + (response.error || 'Unknown error'), 'error');
@@ -1979,6 +2155,65 @@ async function deleteGroup(group) {
     await VaultStorage.removeGroup(group.id);
     showToast('Group deleted', 'success');
     await renderVaultGroups();
+  }
+}
+
+// ============================================
+// VIEW TOGGLE FUNCTIONS
+// ============================================
+
+// Handle view toggle button click
+async function handleViewToggle(view) {
+  if (!view || (view !== 'grouped' && view !== 'ungrouped')) return;
+
+  // Save the view setting
+  await Settings.updateSetting('liveTabsView', view);
+
+  // Update toggle button UI
+  updateViewToggleUI(view);
+
+  // Clear selection when switching views
+  selectedTabIds.clear();
+
+  // Re-render the open tabs with the new view mode
+  await renderLiveTabsPanel();
+  updateSelectedCount();
+}
+
+// Update the view toggle button states
+function updateViewToggleUI(view) {
+  const buttons = document.querySelectorAll('.view-toggle-btn');
+  buttons.forEach(btn => {
+    const isActive = btn.dataset.view === view;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-checked', isActive ? 'true' : 'false');
+  });
+}
+
+// Handle keyboard navigation for view toggle
+function handleViewToggleKeydown(e) {
+  const buttons = Array.from(document.querySelectorAll('.view-toggle-btn'));
+  const currentIndex = buttons.findIndex(btn => btn.classList.contains('active'));
+
+  let newIndex = currentIndex;
+
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    newIndex = (currentIndex + 1) % buttons.length;
+    e.preventDefault();
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    newIndex = (currentIndex - 1 + buttons.length) % buttons.length;
+    e.preventDefault();
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    // Already handled by click, but ensure it works
+    e.preventDefault();
+    return;
+  } else {
+    return;
+  }
+
+  if (newIndex !== currentIndex) {
+    buttons[newIndex].focus();
+    handleViewToggle(buttons[newIndex].dataset.view);
   }
 }
 

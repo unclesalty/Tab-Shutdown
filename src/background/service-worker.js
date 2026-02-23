@@ -293,10 +293,10 @@ async function handleMessage(message) {
       return await restoreTabs(message.groupId, message.tabIds);
 
     case 'duplicate-group':
-      return await duplicateGroup(message.groupId);
+      return await duplicateTabs(message.groupId, null, message.navigate);
 
     case 'duplicate-tabs':
-      return await duplicateTabs(message.groupId, message.tabIds);
+      return await duplicateTabs(message.groupId, message.tabIds, message.navigate);
 
     case 'get-domain-groups':
       return { success: true, domains: await getDomainGroups() };
@@ -590,11 +590,12 @@ async function restoreTabs(groupId, tabIds) {
 }
 
 /**
- * Open tabs from a group WITHOUT removing from vault (duplicate)
+ * Open tabs from a group WITHOUT removing from vault
  * @param {string} groupId
- * @param {string[]} [tabIds] - Optional: specific tab IDs to duplicate (all if omitted)
+ * @param {string[]} [tabIds] - Optional: specific tab IDs to open (all if omitted)
+ * @param {boolean} [navigate] - If true, navigate to the first opened tab
  */
-async function duplicateTabs(groupId, tabIds = null) {
+async function duplicateTabs(groupId, tabIds = null, navigate = false) {
   try {
     const group = await VaultStorage.getGroup(groupId);
     if (!group) {
@@ -602,23 +603,20 @@ async function duplicateTabs(groupId, tabIds = null) {
     }
 
     const tabIdSet = tabIds ? new Set(tabIds) : null;
-    const tabsToDuplicate = tabIdSet
+    const tabsToOpen = tabIdSet
       ? group.tabs.filter(t => tabIdSet.has(t.id))
       : group.tabs;
 
-    await openTabs(tabsToDuplicate);
+    const firstTab = await openTabs(tabsToOpen);
 
-    return { success: true, count: tabsToDuplicate.length };
+    if (navigate) {
+      await navigateToFirstTab(firstTab);
+    }
+
+    return { success: true, count: tabsToOpen.length };
   } catch (error) {
     console.error('Error in duplicateTabs:', error);
     return { success: false, error: error.message };
   }
 }
 
-/**
- * Open all tabs from a group WITHOUT removing from vault (duplicate)
- * @param {string} groupId
- */
-async function duplicateGroup(groupId) {
-  return duplicateTabs(groupId);
-}

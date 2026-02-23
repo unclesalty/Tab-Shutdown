@@ -1,338 +1,292 @@
-# PRD: Tab Goblin v6 — Import/Export and Keyboard Shortcuts
+# PRD: Tab Goblin v7 — Live Tabs View Improvements
 
 ## Overview
 
 **Tab Goblin** is a Chrome extension that solves RAM/CPU drain from too many tabs while preserving them as workflow aids. Tabs are either live (open) or vaulted (fully closed and saved). No suspension, no halfway — closed is closed.
 
-## v6 Goals
+## v7 Goals
 
-This release adds **data portability** and **keyboard accessibility**:
+This release improves the **Live Tabs panel** with better view options and fixes selection/vault button behavior:
 
-1. **Import/Export** — Backup vaults to file and restore them; import Chrome bookmarks into vault
-2. **Keyboard Shortcut** — Hotkey to toggle the side panel open/closed with OS-specific display
+1. **View Toggle** — Switch between grouped and ungrouped views of live tabs
+2. **Selection Behavior** — Fix group checkbox and vault button interactions
+3. **Button State Management** — Disable vault buttons until tabs are selected
 
 ---
 
 ## Problem Statement
 
-**Data Portability:**
-- Users cannot backup their vault data
-- Users cannot transfer vaults between machines or Chrome profiles
-- Users with existing bookmarks cannot easily migrate to Tab Goblin
-- No way to share vault groups with others
+**View Flexibility:**
+- Users may prefer to see all tabs in a flat list rather than grouped by domain
+- The grouped view works well for domain-focused workflows but not for scanning all tabs quickly
+- No way to toggle between views
 
-**Keyboard Accessibility:**
-- Power users want to open Tab Goblin without clicking the toolbar icon
-- No keyboard shortcut exists to toggle the side panel
-- Users don't know how to configure Chrome extension shortcuts
-
----
-
-## Feature 1: Import/Export
-
-### 1.1 Export Format
-
-**Requirement:** Export vault data in Netscape Bookmark HTML format (same as Chrome bookmark export).
-
-**Format Specification:**
-```html
-<!DOCTYPE NETSCAPE-Bookmark-file-1>
-<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
-<TITLE>Tab Goblin Export</TITLE>
-<H1>Tab Goblin Export</H1>
-<DL><p>
-    <DT><H3 ADD_DATE="1708646400" LAST_MODIFIED="1708646400">Group Name</H3>
-    <DL><p>
-        <DT><A HREF="https://example.com" ADD_DATE="1708646400">Page Title</A>
-    </DL><p>
-</DL><p>
-```
-
-**Key Points:**
-- Each vault group becomes a folder (`<H3>`)
-- Each tab becomes a bookmark (`<A HREF>`)
-- `ADD_DATE` uses Unix timestamp (seconds since 1970)
-- File downloads as `tab-goblin-export-YYYY-MM-DD.html`
-
-### 1.2 Export UI
-
-**Location:** Settings tab, new "Data" section
-
-**Elements:**
-- "Export Vault" button
-- Brief description: "Download your vault as a bookmark file"
-
-**Behavior:**
-- Click triggers file download
-- Includes all vault groups and tabs
-- Does NOT include history (history is ephemeral)
-- Shows toast: "Vault exported successfully"
-
-### 1.3 Import Format
-
-**Requirement:** Import Netscape Bookmark HTML format (Chrome/Firefox/Edge bookmark exports).
-
-**Supported Sources:**
-- Chrome bookmark export
-- Firefox bookmark export
-- Edge bookmark export
-- Tab Goblin export (round-trip)
-
-### 1.4 Import UI
-
-**Location:** Settings tab, "Data" section (below Export)
-
-**Elements:**
-- "Import Bookmarks" button
-- File picker (accepts `.html` files)
-- Brief description: "Import bookmarks or a previous Tab Goblin export"
-
-**Behavior:**
-- Opens file picker on click
-- Parses Netscape Bookmark HTML format
-- Each top-level folder becomes a vault group
-- Bookmarks without folders go into "Imported Bookmarks" group
-- Shows confirmation dialog: "Import X groups with Y tabs?"
-- On confirm: adds groups to vault, shows toast: "Imported X groups"
-- Does NOT replace existing vault (additive import)
-
-### 1.5 Import Conflict Handling
-
-**Duplicate URLs:**
-- If imported URL already exists in vault, skip it
-- Count skipped duplicates and report: "Imported X tabs (Y duplicates skipped)"
-
-**Empty Groups:**
-- Skip folders with no bookmarks
-- Skip separator items (`<HR>`)
-
-**Nested Folders:**
-- Flatten nested structure (Tab Goblin has flat groups)
-- Nested folder names become: "Parent > Child"
+**Selection & Vault Button Issues:**
+- Domain "Vault" button behavior is unclear when nothing is selected
+- "Vault Selected" button at the bottom is always enabled even when no tabs are selected
+- Users expect disabled buttons to indicate "nothing to do"
 
 ---
 
-## Feature 2: Keyboard Shortcut
+## Feature 1: Live Tabs View Toggle
 
-### 2.1 Default Shortcut
+### 1.1 View Options
 
-**Requirement:** Provide a suggested keyboard shortcut to toggle the side panel.
+**Requirement:** Add toggle to switch between grouped and ungrouped views.
+
+**View Modes:**
+| Mode | Description |
+|------|-------------|
+| **Grouped** (default) | Tabs organized in collapsible domain accordions |
+| **Ungrouped** | Flat list of all tabs, sorted by domain for visual grouping |
+
+### 1.2 Toggle UI
+
+**Location:** Live Tabs panel, above the tabs list (below search)
 
 **Implementation:**
-- Use Chrome's `commands` API with `_execute_action`
-- Suggested shortcut: `Ctrl+Shift+G` (Windows/Linux), `Command+Shift+G` (macOS)
-- "G" for "Goblin"
+- Two icon buttons in a toggle group (radio behavior)
+- Icons: Grid/grouped icon + List icon
+- Visual indicator for active state
+- Persist preference to settings
 
-**Manifest Addition:**
-```json
-{
-  "commands": {
-    "_execute_action": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+G",
-        "mac": "Command+Shift+G"
-      },
-      "description": "Open Tab Goblin"
-    }
-  }
+**HTML Structure:**
+```html
+<div class="view-toggle">
+  <button class="view-toggle-btn active" data-view="grouped" title="Grouped view">
+    <!-- Grid icon -->
+  </button>
+  <button class="view-toggle-btn" data-view="ungrouped" title="List view">
+    <!-- List icon -->
+  </button>
+</div>
+```
+
+### 1.3 Ungrouped View Behavior
+
+**Tab Sorting:**
+- Sort by domain (alphabetically), then by title within domain
+- Tabs from the same domain appear consecutively (visual grouping without accordions)
+- Include subtle domain separator or domain badge on each tab
+
+**Tab Item Display:**
+- Same tab item component as grouped view
+- Add domain badge/label to each tab item
+- Checkbox for selection
+- Same action buttons (Protect, Vault, Close)
+
+### 1.4 Settings Persistence
+
+**Setting Key:** `liveTabsView`
+**Values:** `'grouped'` | `'ungrouped'`
+**Default:** `'grouped'`
+
+---
+
+## Feature 2: Selection Behavior Fixes
+
+### 2.1 Group Checkbox Behavior
+
+**Requirement:** Group checkbox should select/deselect all items in the group.
+
+**Current Behavior:** This already works correctly in the code.
+
+**Expected Behavior:**
+- Checking group checkbox → all tabs in group become selected
+- Unchecking group checkbox → all tabs in group become deselected
+- Mixed selection → group checkbox shows indeterminate state
+
+### 2.2 Vault Button States
+
+**Requirement:** Vault buttons should be disabled until tabs are selected.
+
+**Domain "Vault" Button:**
+| State | Button |
+|-------|--------|
+| Nothing selected in group | Disabled |
+| Some/all tabs selected | Enabled |
+
+**"Vault Selected" Button (bottom):**
+| State | Button |
+|-------|--------|
+| No tabs selected anywhere | Disabled |
+| Any tabs selected | Enabled |
+
+### 2.3 Visual Disabled State
+
+```css
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 ```
 
-### 2.2 Display Current Shortcut
+---
 
-**Location:** Settings tab, new "Keyboard Shortcut" section
+## Feature 3: Multi-Group Vaulting
 
-**Elements:**
-- Section header: "Keyboard Shortcut"
-- Current shortcut display (OS-specific formatting)
-- Link/button to Chrome's shortcut settings
+### 3.1 Vault Selected Across Groups
 
-**OS-Specific Display:**
-- macOS: Show `Cmd` symbol or text (detect via `navigator.platform`)
-- Windows/Linux: Show `Ctrl`
+**Requirement:** "Vault Selected" should handle tabs from multiple domain groups.
 
-**Dynamic Shortcut Reading:**
-- Use `chrome.commands.getAll()` to read actual configured shortcut
-- Display whatever the user has configured (may differ from suggested)
-- If no shortcut configured, show "Not set"
+**Current Behavior:** Already works — `shutdown-tabs-by-domain` groups selected tabs by domain.
 
-### 2.3 Shortcut Configuration Instructions
+**Expected Behavior:**
+- Select tabs from multiple domains
+- Click "Vault Selected"
+- Each domain gets its own vault group
 
-**Requirement:** Help users configure or change the keyboard shortcut.
+### 3.2 Vault Multiple Groups at Once
 
-**UI Elements:**
-- "Configure Shortcut" link/button
-- Opens `chrome://extensions/shortcuts` in new tab
-- Brief instruction text: "Click to customize in Chrome settings"
+**Requirement:** Selecting multiple group checkboxes should vault all those groups.
 
-**Note:** Extensions cannot programmatically open `chrome://` URLs directly. Use `chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })` which works from the extension context.
-
-### 2.4 Shortcut Enable/Disable Toggle
-
-**Requirement:** Allow users to disable the keyboard shortcut from the extension.
-
-**Implementation Options:**
-
-**Option A: Remove from manifest (not recommended)**
-- Cannot dynamically modify manifest
-
-**Option B: Inform user to clear shortcut (recommended)**
-- Display instructions: "To disable, clear the shortcut in Chrome settings"
-- Provide direct link to `chrome://extensions/shortcuts`
-
-**Decision:** Option B — Chrome manages shortcuts; we display current state and link to settings.
+**Behavior:**
+- Select group A checkbox (all A tabs selected)
+- Select group B checkbox (all B tabs selected)
+- Click "Vault Selected" → vaults A and B as separate groups
 
 ---
 
 ## UI Specifications
 
-### Settings Tab Layout (Updated)
+### Live Tabs Panel Layout (Updated)
 
 ```
-Settings
+Live Tabs
 ─────────────────────────────
-Appearance
-  Theme Mode: [System ▼]
-  Theme Palette: [○ ○ ○ ○ ○]
+[Search open tabs...]
+
+[View: ▣ Grouped | ☰ List]
+
+Home Tabs (3)
+  [Home tab items...]
+
+Open Tabs (15)
+  [Domain groups or flat list based on view]
 
 ─────────────────────────────
-Keyboard Shortcut
-  Current: Cmd+Shift+G
-  [Configure in Chrome Settings]
-
-─────────────────────────────
-Data
-  [Export Vault]
-  Download your vault as a bookmark file
-
-  [Import Bookmarks]
-  Import bookmarks or a previous export
-
-─────────────────────────────
-Home Tabs
-  [List of home tab patterns...]
-  [Add Pattern]
+[X selected]  [Vault Selected]
 ```
 
-### Import Confirmation Dialog
+### View Toggle Styling
 
+```css
+.view-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-surface);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.view-toggle-btn {
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.view-toggle-btn.active {
+  background: var(--bg);
+  color: var(--primary);
+}
 ```
-┌─────────────────────────────────┐
-│  Import Bookmarks?              │
-│                                 │
-│  Found 5 groups with 47 tabs.   │
-│                                 │
-│  This will add to your existing │
-│  vault (nothing will be         │
-│  replaced or deleted).          │
-│                                 │
-│  [Cancel]           [Import]    │
-└─────────────────────────────────┘
-```
+
+### Icon Options
+
+**Grouped View Icon:**
+- Unicode: `⊞` (U+229E) or `▦` (U+25A6)
+- Or SVG grid icon
+
+**Ungrouped View Icon:**
+- Unicode: `☰` (U+2630) hamburger menu
+- Or `≡` (U+2261) identical to
+- Or SVG list icon
 
 ---
 
 ## Technical Notes
 
-### Netscape Bookmark Parsing
+### Settings Update
 
+Add to `DEFAULT_SETTINGS`:
 ```javascript
-function parseNetscapeBookmarks(html) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-  const groups = [];
-
-  // Find all DT elements (folders and bookmarks)
-  const dts = doc.querySelectorAll('DT');
-  // Parse folder structure...
-
-  return groups;
+{
+  // ... existing
+  liveTabsView: 'grouped'
 }
 ```
 
-### Netscape Bookmark Generation
+### Render Logic
 
 ```javascript
-function generateNetscapeBookmarks(vault) {
-  const timestamp = Math.floor(Date.now() / 1000);
-  let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
-<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
-<TITLE>Tab Goblin Export</TITLE>
-<H1>Tab Goblin Export</H1>
-<DL><p>
-`;
+async function renderOpenTabsList(tabs) {
+  const viewMode = await Settings.getSetting('liveTabsView') || 'grouped';
 
-  for (const group of vault.groups) {
-    html += `    <DT><H3 ADD_DATE="${timestamp}">${escapeHtml(group.name)}</H3>\n`;
-    html += `    <DL><p>\n`;
-    for (const tab of group.tabs) {
-      const addDate = Math.floor(tab.vaultedAt / 1000);
-      html += `        <DT><A HREF="${escapeHtml(tab.url)}" ADD_DATE="${addDate}">${escapeHtml(tab.title)}</A>\n`;
-    }
-    html += `    </DL><p>\n`;
+  if (viewMode === 'grouped') {
+    renderGroupedView(tabs);
+  } else {
+    renderUngroupedView(tabs);
   }
-
-  html += `</DL><p>`;
-  return html;
 }
-```
 
-### OS Detection for Shortcut Display
+function renderUngroupedView(tabs) {
+  // Sort by domain, then by title
+  const sorted = [...tabs].sort((a, b) => {
+    const domainA = UrlUtils.getDomainFromUrl(a.url);
+    const domainB = UrlUtils.getDomainFromUrl(b.url);
+    if (domainA !== domainB) return domainA.localeCompare(domainB);
+    return a.title.localeCompare(b.title);
+  });
 
-```javascript
-function getModifierKey() {
-  const platform = navigator.platform.toLowerCase();
-  if (platform.includes('mac')) {
-    return 'Cmd';  // or '⌘' for symbol
+  // Render flat list with domain badges
+  for (const tab of sorted) {
+    container.appendChild(createUngroupedTabItem(tab));
   }
-  return 'Ctrl';
-}
-
-function formatShortcut(shortcut) {
-  // shortcut from chrome.commands.getAll() e.g., "Ctrl+Shift+G"
-  const modifier = getModifierKey();
-  return shortcut.replace(/Ctrl|Command/gi, modifier);
 }
 ```
 
-### Reading Current Shortcut
+### Button State Management
 
 ```javascript
-async function getCurrentShortcut() {
-  const commands = await chrome.commands.getAll();
-  const actionCommand = commands.find(cmd => cmd.name === '_execute_action');
-  return actionCommand?.shortcut || null;
+function updateVaultButtonStates() {
+  const vaultSelectedBtn = document.getElementById('vaultSelectedBtn');
+  vaultSelectedBtn.disabled = selectedTabIds.size === 0;
+
+  // Update domain vault buttons
+  document.querySelectorAll('.domain-group-card').forEach(card => {
+    const vaultBtn = card.querySelector('.domain-vault-btn');
+    const hasSelectedTabs = Array.from(card.querySelectorAll('.domain-tab-checkbox'))
+      .some(cb => cb.checked);
+    vaultBtn.disabled = !hasSelectedTabs;
+  });
 }
 ```
 
 ---
 
-## Non-Goals (v6)
+## Non-Goals (v7)
 
-- Cloud sync (backup to Google Drive, etc.)
-- Scheduled automatic backups
-- Import from other formats (JSON, CSV)
-- Export individual groups (export all or nothing)
-- Custom shortcut configuration within extension (use Chrome's UI)
-- Multiple shortcut bindings
+- Tab sorting options (by title, by most recently used, etc.)
+- Tab filtering by other criteria
+- Batch close without vaulting
+- Drag-and-drop reordering of live tabs
 
 ---
 
 ## Success Criteria
 
-- [ ] Export button downloads valid Netscape Bookmark HTML file
-- [ ] Exported file can be imported into Chrome bookmarks
-- [ ] Import parses Chrome bookmark exports correctly
-- [ ] Import parses Tab Goblin exports correctly (round-trip)
-- [ ] Import shows confirmation dialog with counts
-- [ ] Import adds groups without replacing existing vault
-- [ ] Duplicate URLs are skipped during import
-- [ ] Keyboard shortcut section appears in Settings
-- [ ] Current shortcut is displayed with OS-appropriate modifier
-- [ ] "Not set" shown when no shortcut configured
-- [ ] Configure link opens Chrome shortcuts page
-- [ ] Default shortcut (Ctrl/Cmd+Shift+G) works after install
-- [ ] Shortcut toggles side panel open/closed
+- [ ] View toggle appears in Live Tabs panel
+- [ ] Grouped view shows domain accordions (current behavior)
+- [ ] Ungrouped view shows flat list sorted by domain
+- [ ] View preference persists across sessions
+- [ ] "Vault Selected" button disabled when nothing selected
+- [ ] Domain "Vault" button disabled when no tabs selected in that group
+- [ ] Selecting group checkbox selects all tabs in group
+- [ ] Can vault tabs from multiple groups with single "Vault Selected" click
 
 ---
 
@@ -341,23 +295,16 @@ async function getCurrentShortcut() {
 ```
 src/
 ├── common/
-│   ├── import-export.js    # NEW: Import/export functions
-│   └── storage.js          # May need bulk import helper
+│   └── settings.js          # Add liveTabsView setting
 ├── sidepanel/
-│   ├── sidepanel.js        # Settings UI updates
-│   └── sidepanel.css       # New section styles
-└── background/
-    └── service-worker.js   # File download handling (if needed)
-
-manifest.json               # Add commands section
+│   ├── sidepanel.js        # View toggle, ungrouped rendering, button states
+│   ├── sidepanel.css       # View toggle styles, disabled button styles
+│   └── sidepanel.html      # View toggle HTML
 ```
 
 ---
 
 ## References
 
-- **Chrome Commands API:** https://developer.chrome.com/docs/extensions/reference/api/commands
-- **Chrome Shortcuts UI:** `chrome://extensions/shortcuts`
-- **Netscape Bookmark Format:** http://fileformats.archiveteam.org/wiki/Netscape_bookmarks
-- **v5 PRD (archived):** `archive/PRD-v5-2026-02-22.md`
-- **v5 TICKETS (archived):** `archive/TICKETS-v5-2026-02-22.md`
+- **v6 PRD (archived):** `archive/PRD-v6-2026-02-22.md`
+- **v6 TICKETS (archived):** `archive/TICKETS-v6-2026-02-22.md`
