@@ -8,10 +8,33 @@
  * Colors are defined in CSS (sidepanel.css), not here.
  */
 const THEMES = {
+  // Default light theme
   'light': {
     name: 'Light',
     type: 'light'
   },
+  // Light theme palettes
+  'sunrise-citrus': {
+    name: 'Sunrise Citrus',
+    type: 'light'
+  },
+  'ocean-breeze': {
+    name: 'Ocean Breeze',
+    type: 'light'
+  },
+  'forest-moss': {
+    name: 'Forest Moss',
+    type: 'light'
+  },
+  'lavender-mist': {
+    name: 'Lavender Mist',
+    type: 'light'
+  },
+  'warm-slate': {
+    name: 'Warm Slate',
+    type: 'light'
+  },
+  // Dark theme palettes
   'midnight-glass': {
     name: 'Midnight Glass',
     type: 'dark'
@@ -62,6 +85,16 @@ function getDarkThemes() {
 }
 
 /**
+ * Get all light themes (excluding default 'light')
+ * @returns {Object[]} Array of light theme palette objects with keys
+ */
+function getLightThemes() {
+  return Object.entries(THEMES)
+    .filter(([key, theme]) => theme.type === 'light' && key !== 'light')
+    .map(([key, theme]) => ({ key, ...theme }));
+}
+
+/**
  * Apply a theme to the document
  * @param {string} themeKey - The theme to apply, or null for system default
  */
@@ -87,6 +120,7 @@ const Themes = {
   getTheme,
   getThemeKeys,
   getDarkThemes,
+  getLightThemes,
   applyTheme
 };
 

@@ -78,9 +78,6 @@
             <span class="home-tabs-expand" aria-hidden="true">&#9660;</span>
           </button>
           <div id="homeTabsList" class="home-tabs-list" role="list" aria-label="Protected home tabs"></div>
-          <div class="home-tabs-footer">
-            <button id="editPatternsBtn" class="btn-link">Edit Patterns</button>
-          </div>
         </section>
 
         <!-- Open Tabs Section (grouped by domain) -->
@@ -108,26 +105,26 @@
 
       <!-- Vault Panel -->
       <div id="vaultPanel" class="panel hidden" role="tabpanel" aria-labelledby="tab-vault">
-        <!-- History Section (recently closed tabs) -->
-        <section id="historySection" class="history-section" aria-labelledby="historyTitle">
-          <button class="history-header" id="historyHeader" aria-expanded="true" aria-controls="historyList">
-            <span class="history-icon" aria-hidden="true"></span>
-            <span class="history-title" id="historyTitle">History</span>
-            <span class="history-count" id="historyCount" aria-label="history tabs">0</span>
-            <span class="history-expand" aria-hidden="true">&#9660;</span>
-          </button>
+        <!-- Vault Groups -->
+        <div id="vaultGroups" class="vault-groups">
+          <p class="empty-state">Your vault is empty. Shutdown some tabs to get started!</p>
+        </div>
+
+        <!-- History Section (recently closed tabs) - at bottom, expands upward -->
+        <section id="historySection" class="history-section history-bottom" aria-labelledby="historyTitle">
           <div id="historyList" class="history-list" role="list" aria-label="Recently closed tabs"></div>
           <div id="historyEmpty" class="history-empty hidden">No recently closed tabs</div>
           <div id="historyFooter" class="history-footer hidden">
             <span class="history-expiry-note">Tabs expire after 24 hours</span>
             <button id="clearHistoryBtn" class="btn-link btn-danger-link">Clear All</button>
           </div>
+          <button class="history-header" id="historyHeader" aria-expanded="false" aria-controls="historyList">
+            <span class="history-icon" aria-hidden="true"></span>
+            <span class="history-title" id="historyTitle">History</span>
+            <span class="history-count" id="historyCount" aria-label="history tabs">0</span>
+            <span class="history-expand" aria-hidden="true">&#9650;</span>
+          </button>
         </section>
-
-        <!-- Vault Groups -->
-        <div id="vaultGroups" class="vault-groups">
-          <p class="empty-state">Your vault is empty. Shutdown some tabs to get started!</p>
-        </div>
       </div>
 
       <!-- Settings Panel -->
@@ -150,6 +147,32 @@
               <input type="radio" name="themeMode" value="dark" />
               <span class="theme-mode-label">Dark</span>
             </label>
+          </div>
+
+          <div id="lightPaletteSelector" class="light-palette-selector hidden">
+            <p class="settings-sublabel">Light theme palette:</p>
+            <div class="palette-grid">
+              <button class="palette-btn" data-palette="sunrise-citrus" title="Sunrise Citrus">
+                <span class="palette-preview sunrise-citrus"></span>
+                <span class="palette-name">Sunrise Citrus</span>
+              </button>
+              <button class="palette-btn" data-palette="ocean-breeze" title="Ocean Breeze">
+                <span class="palette-preview ocean-breeze"></span>
+                <span class="palette-name">Ocean Breeze</span>
+              </button>
+              <button class="palette-btn" data-palette="forest-moss" title="Forest Moss">
+                <span class="palette-preview forest-moss"></span>
+                <span class="palette-name">Forest Moss</span>
+              </button>
+              <button class="palette-btn" data-palette="lavender-mist" title="Lavender Mist">
+                <span class="palette-preview lavender-mist"></span>
+                <span class="palette-name">Lavender Mist</span>
+              </button>
+              <button class="palette-btn active" data-palette="warm-slate" title="Warm Slate">
+                <span class="palette-preview warm-slate"></span>
+                <span class="palette-name">Warm Slate</span>
+              </button>
+            </div>
           </div>
 
           <div id="darkPaletteSelector" class="dark-palette-selector hidden">

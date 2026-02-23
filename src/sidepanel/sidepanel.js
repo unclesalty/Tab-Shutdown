@@ -24,6 +24,64 @@ const pluralizeTabs = UIHelpers.pluralizeTabs.bind(UIHelpers);
 const clearContainer = UIHelpers.clearContainer.bind(UIHelpers);
 const showToast = UIHelpers.showToast.bind(UIHelpers);
 const setLoading = UIHelpers.setLoading.bind(UIHelpers);
+const getDefaultFavicon = UIHelpers.getDefaultFavicon.bind(UIHelpers);
+const truncateUrl = UIHelpers.truncateUrl.bind(UIHelpers);
+
+// Check if a tab matches a search query (by title or URL)
+function matchesSearch(tab, query) {
+  if (!query) return true;
+  const titleMatch = (tab.title || '').toLowerCase().includes(query);
+  const urlMatch = (tab.url || '').toLowerCase().includes(query);
+  return titleMatch || urlMatch;
+}
+
+// Refresh the live tabs panel with tab count and selection state
+async function refreshLivePanel() {
+  await updateLiveTabCount();
+  await renderLiveTabsPanel();
+  updateSelectedCount();
+}
+
+// Create a favicon element with error fallback
+function createFavicon(faviconUrl) {
+  const favicon = document.createElement('img');
+  favicon.className = 'tab-favicon';
+  favicon.src = faviconUrl || getDefaultFavicon();
+  favicon.alt = '';
+  favicon.onerror = () => {
+    favicon.src = getDefaultFavicon();
+  };
+  return favicon;
+}
+
+// Create tab info element (title and URL) with optional active badge
+function createTabInfo(title, url, isActive = false) {
+  const info = document.createElement('div');
+  info.className = 'tab-info';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'tab-title-row';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'tab-title';
+  titleEl.textContent = title || 'Untitled';
+  titleRow.appendChild(titleEl);
+
+  if (isActive) {
+    const activeBadge = document.createElement('span');
+    activeBadge.className = 'active-badge';
+    activeBadge.textContent = 'Active';
+    titleRow.appendChild(activeBadge);
+  }
+
+  const urlEl = document.createElement('div');
+  urlEl.className = 'tab-url';
+  urlEl.textContent = truncateUrl(url);
+
+  info.appendChild(titleRow);
+  info.appendChild(urlEl);
+  return info;
+}
 
 async function init() {
   await initTheme();
@@ -70,9 +128,10 @@ function setupTabListeners() {
 async function initTheme() {
   try {
     const themeMode = await Settings.getSetting('themeMode');
-    const themePalette = await Settings.getSetting('themePalette');
+    const lightPalette = await Settings.getSetting('lightPalette');
+    const darkPalette = await Settings.getSetting('darkPalette');
 
-    applyThemeFromSettings(themeMode, themePalette);
+    applyThemeFromSettings(themeMode, lightPalette, darkPalette);
 
     // Listen for system preference changes
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', handleSystemThemeChange);
@@ -83,14 +142,14 @@ async function initTheme() {
 }
 
 // Apply theme based on mode and palette settings
-function applyThemeFromSettings(themeMode, themePalette) {
+function applyThemeFromSettings(themeMode, lightPalette, darkPalette) {
   switch (themeMode) {
     case 'light':
-      Themes.applyTheme('light');
+      Themes.applyTheme(lightPalette || 'light');
       break;
     case 'dark':
     case 'custom':
-      Themes.applyTheme(themePalette || 'slate-minimal');
+      Themes.applyTheme(darkPalette || 'slate-minimal');
       break;
     case 'system':
     default:
@@ -113,58 +172,75 @@ async function handleThemeModeChange(e) {
   const mode = e.target.value;
   await Settings.updateSetting('themeMode', mode);
 
-  const paletteSelector = document.getElementById('darkPaletteSelector');
+  const lightPaletteSelector = document.getElementById('lightPaletteSelector');
+  const darkPaletteSelector = document.getElementById('darkPaletteSelector');
+
+  // Hide both selectors first
+  lightPaletteSelector.classList.add('hidden');
+  darkPaletteSelector.classList.add('hidden');
 
   if (mode === 'dark') {
-    // Show palette selector for dark mode
-    paletteSelector.classList.remove('hidden');
-    const currentPalette = await Settings.getSetting('themePalette') || 'slate-minimal';
+    // Show dark palette selector
+    darkPaletteSelector.classList.remove('hidden');
+    const currentPalette = await Settings.getSetting('darkPalette') || 'slate-minimal';
+    Themes.applyTheme(currentPalette);
+  } else if (mode === 'light') {
+    // Show light palette selector
+    lightPaletteSelector.classList.remove('hidden');
+    const currentPalette = await Settings.getSetting('lightPalette') || 'light';
     Themes.applyTheme(currentPalette);
   } else {
-    // Hide palette selector
-    paletteSelector.classList.add('hidden');
-
-    if (mode === 'light') {
-      Themes.applyTheme('light');
-    } else {
-      // System mode
-      Themes.applyTheme(null);
-    }
+    // System mode
+    Themes.applyTheme(null);
   }
 }
 
 // Handle palette button click
-async function handlePaletteChange(palette) {
-  // Update active state
-  document.querySelectorAll('.palette-btn').forEach(btn => {
+async function handlePaletteChange(palette, paletteType) {
+  // Determine which selector contains this palette
+  const selectorId = paletteType === 'light' ? 'lightPaletteSelector' : 'darkPaletteSelector';
+  const settingKey = paletteType === 'light' ? 'lightPalette' : 'darkPalette';
+
+  // Update active state within that selector only
+  const selector = document.getElementById(selectorId);
+  selector.querySelectorAll('.palette-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.palette === palette);
   });
 
   // Save and apply
-  await Settings.updateSetting('themePalette', palette);
+  await Settings.updateSetting(settingKey, palette);
   Themes.applyTheme(palette);
 }
 
 // Initialize theme selector UI from settings
 async function initThemeSelector() {
   const themeMode = await Settings.getSetting('themeMode') || 'system';
-  const themePalette = await Settings.getSetting('themePalette') || 'slate-minimal';
+  const lightPalette = await Settings.getSetting('lightPalette') || 'light';
+  const darkPalette = await Settings.getSetting('darkPalette') || 'slate-minimal';
 
   // Set radio button
   const radio = document.querySelector(`input[name="themeMode"][value="${themeMode}"]`);
   if (radio) radio.checked = true;
 
-  // Show/hide palette selector
-  const paletteSelector = document.getElementById('darkPaletteSelector');
+  // Show/hide palette selectors
+  const lightPaletteSelector = document.getElementById('lightPaletteSelector');
+  const darkPaletteSelector = document.getElementById('darkPaletteSelector');
+
+  lightPaletteSelector.classList.add('hidden');
+  darkPaletteSelector.classList.add('hidden');
+
   if (themeMode === 'dark') {
-    paletteSelector.classList.remove('hidden');
-  } else {
-    paletteSelector.classList.add('hidden');
+    darkPaletteSelector.classList.remove('hidden');
+  } else if (themeMode === 'light') {
+    lightPaletteSelector.classList.remove('hidden');
   }
 
-  // Set active palette
-  document.querySelectorAll('.palette-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.palette === themePalette);
+  // Set active palettes
+  lightPaletteSelector.querySelectorAll('.palette-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.palette === lightPalette);
+  });
+  darkPaletteSelector.querySelectorAll('.palette-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.palette === darkPalette);
   });
 }
 
@@ -316,29 +392,14 @@ async function renderLiveTabsPanel() {
         favIconUrl: tab.favIconUrl
       });
       openTabsByUrl.set(tab.url, tab);
-    } else {
-      // Filter regular tabs by search query if present
-      if (searchQuery) {
-        const titleMatch = (tab.title || '').toLowerCase().includes(searchQuery);
-        const urlMatch = (tab.url || '').toLowerCase().includes(searchQuery);
-        if (!titleMatch && !urlMatch) continue;
-      }
+    } else if (matchesSearch(tab, searchQuery)) {
       regularTabs.push(tab);
     }
   }
 
-  // Get all saved home tab instances (includes closed tabs)
+  // Get all saved home tab instances (includes closed tabs) and filter by search
   const homeInstances = await HomeTabs.getHomeInstances();
-
-  // Filter instances by search query if present
-  let filteredInstances = homeInstances;
-  if (searchQuery) {
-    filteredInstances = homeInstances.filter(instance => {
-      const titleMatch = (instance.title || '').toLowerCase().includes(searchQuery);
-      const urlMatch = (instance.url || '').toLowerCase().includes(searchQuery);
-      return titleMatch || urlMatch;
-    });
-  }
+  const filteredInstances = homeInstances.filter(instance => matchesSearch(instance, searchQuery));
 
   // Render home tabs section with instances and open tab info
   renderHomeTabsSection(filteredInstances, openTabsByUrl, homePatterns);
@@ -404,28 +465,9 @@ function createHomeTabItem(instance, openTab, homePatterns) {
     item.dataset.tabId = openTab.id;
   }
 
-  const favicon = document.createElement('img');
-  favicon.className = 'tab-favicon';
   // Use openTab data if available (more current), fallback to instance
-  favicon.src = (openTab?.favIconUrl || instance.favIconUrl) || getDefaultFavicon();
-  favicon.alt = '';
-  favicon.onerror = () => {
-    favicon.src = getDefaultFavicon();
-  };
-
-  const info = document.createElement('div');
-  info.className = 'tab-info';
-
-  const title = document.createElement('div');
-  title.className = 'tab-title';
-  title.textContent = (openTab?.title || instance.title) || 'Untitled';
-
-  const url = document.createElement('div');
-  url.className = 'tab-url';
-  url.textContent = truncateUrl(instance.url);
-
-  info.appendChild(title);
-  info.appendChild(url);
+  const favicon = createFavicon(openTab?.favIconUrl || instance.favIconUrl);
+  const info = createTabInfo(openTab?.title || instance.title, instance.url);
 
   // Status indicator
   const status = document.createElement('span');
@@ -484,18 +526,21 @@ function createHomeTabItem(instance, openTab, homePatterns) {
 
 // Remove a tab from home protection
 async function removeTabFromHome(tabUrl, patterns) {
-  // Find matching pattern(s) for this URL
-  const matchingPattern = patterns.find(pattern => {
-    try {
-      return HomeTabs.patternToRegex(pattern).test(tabUrl);
-    } catch {
-      return false;
-    }
-  });
+  // Find pattern to remove: exact URL match first, then regex match
+  let patternToRemove = patterns.includes(tabUrl) ? tabUrl : null;
 
-  if (matchingPattern) {
-    await HomeTabs.removeHomePattern(matchingPattern);
-    // Clean up any instances that no longer match patterns
+  if (!patternToRemove) {
+    patternToRemove = patterns.find(pattern => {
+      try {
+        return HomeTabs.patternToRegex(pattern).test(tabUrl);
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  if (patternToRemove) {
+    await HomeTabs.removeHomePattern(patternToRemove);
     await HomeTabs.cleanupOrphanedInstances();
     showToast('Tab unprotected', 'success');
     await renderLiveTabsPanel();
@@ -532,10 +577,8 @@ function renderOpenTabsList(tabs) {
   for (const domain of sortedDomains) {
     const domainTabs = domainGroups[domain];
     container.appendChild(createDomainGroupCard(domain, domainTabs));
-    // Tabs start unselected - user must explicitly select them
   }
 }
-
 
 // Create a domain group card (accordion style)
 function createDomainGroupCard(domain, tabs) {
@@ -667,27 +710,8 @@ function createDomainTabItem(tab, groupCard) {
     updateDomainGroupCheckbox(groupCard);
   });
 
-  const favicon = document.createElement('img');
-  favicon.className = 'tab-favicon';
-  favicon.src = tab.favIconUrl || getDefaultFavicon();
-  favicon.alt = '';
-  favicon.onerror = () => {
-    favicon.src = getDefaultFavicon();
-  };
-
-  const info = document.createElement('div');
-  info.className = 'tab-info';
-
-  const title = document.createElement('div');
-  title.className = 'tab-title';
-  title.textContent = tab.title || 'Untitled';
-
-  const url = document.createElement('div');
-  url.className = 'tab-url';
-  url.textContent = truncateUrl(tab.url);
-
-  info.appendChild(title);
-  info.appendChild(url);
+  const favicon = createFavicon(tab.favIconUrl);
+  const info = createTabInfo(tab.title, tab.url);
 
   // Action buttons container
   const actions = document.createElement('div');
@@ -784,9 +808,7 @@ async function vaultDomainTabs(domain, tabs) {
 
   if (response.success) {
     showToast(`Vaulted ${response.count} ${pluralizeTabs(response.count)} from ${domain}`, 'success');
-    await updateLiveTabCount();
-    await renderLiveTabsPanel();
-    updateSelectedCount();
+    await refreshLivePanel();
   } else {
     showToast('Error: ' + (response.error || 'Unknown error'), 'error');
   }
@@ -805,24 +827,14 @@ async function addTabToHome(tabUrl) {
     return;
   }
 
-  // If pattern already existed, still show success and ensure tab is visible
-  if (!result.added) {
-    // Pattern already exists - verify it actually matches
-    const savedPatterns = await HomeTabs.getHomePatterns();
-    if (!savedPatterns.includes(tabUrl)) {
-      showToast('Error: Failed to save pattern', 'error');
-      return;
-    }
-    showToast('Tab already protected', 'info');
-  } else {
-    // Verify the pattern was actually saved
-    const savedPatterns = await HomeTabs.getHomePatterns();
-    if (!savedPatterns.includes(tabUrl)) {
-      showToast('Error: Failed to save pattern', 'error');
-      return;
-    }
-    showToast('Added to Home Tabs', 'success');
+  // Verify the pattern was saved
+  const savedPatterns = await HomeTabs.getHomePatterns();
+  if (!savedPatterns.includes(tabUrl)) {
+    showToast('Error: Failed to save pattern', 'error');
+    return;
   }
+
+  showToast(result.added ? 'Added to Home Tabs' : 'Tab already protected', result.added ? 'success' : 'info');
 
   // Clear search query to ensure the protected tab is visible
   if (currentSearchQuery) {
@@ -848,9 +860,7 @@ async function vaultSingleTab(tab) {
 
   if (response.success) {
     showToast('Tab vaulted', 'success');
-    await updateLiveTabCount();
-    await renderLiveTabsPanel();
-    updateSelectedCount();
+    await refreshLivePanel();
   } else {
     showToast('Error: ' + (response.error || 'Unknown error'), 'error');
   }
@@ -866,9 +876,7 @@ async function closeTabToHistory(tabId) {
 
     if (response.success) {
       showToast('Tab closed to history', 'info');
-      await updateLiveTabCount();
-      await renderLiveTabsPanel();
-      updateSelectedCount();
+      await refreshLivePanel();
     } else {
       showToast('Error: ' + (response.error || 'Unknown error'), 'error');
     }
@@ -941,8 +949,8 @@ async function renderVaultGroups() {
   });
 }
 
-// Track collapsed state for history section
-let historyCollapsed = false;
+// Track collapsed state for history section (collapsed by default)
+let historyCollapsed = true;
 
 // Render the history section in the vault panel
 async function renderHistorySection() {
@@ -1013,31 +1021,12 @@ function createHistoryItem(tab) {
   item.className = 'history-item';
   item.dataset.tabId = tab.id;
 
-  const favicon = document.createElement('img');
-  favicon.className = 'tab-favicon';
-  favicon.src = tab.favIconUrl || getDefaultFavicon();
-  favicon.alt = '';
-  favicon.onerror = () => {
-    favicon.src = getDefaultFavicon();
-  };
-
-  const info = document.createElement('div');
-  info.className = 'tab-info';
-
-  const title = document.createElement('div');
-  title.className = 'tab-title';
-  title.textContent = tab.title || 'Untitled';
-
-  const urlEl = document.createElement('div');
-  urlEl.className = 'tab-url';
-  urlEl.textContent = truncateUrl(tab.url);
+  const favicon = createFavicon(tab.favIconUrl);
+  const info = createTabInfo(tab.title, tab.url);
 
   const timeEl = document.createElement('div');
   timeEl.className = 'history-time';
   timeEl.textContent = TabHistory.getTimeRemaining(tab);
-
-  info.appendChild(title);
-  info.appendChild(urlEl);
 
   const actions = document.createElement('div');
   actions.className = 'history-item-actions';
@@ -1053,6 +1042,17 @@ function createHistoryItem(tab) {
     await restoreFromHistory([tab.id]);
   });
 
+  // Vault button - add to vault without opening
+  const vaultBtn = document.createElement('button');
+  vaultBtn.className = 'tab-action-btn vault-btn';
+  vaultBtn.textContent = '\u2913'; // Downwards arrow to bar (vault/archive symbol)
+  vaultBtn.title = 'Add to vault';
+  vaultBtn.setAttribute('aria-label', 'Add to vault');
+  vaultBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await vaultFromHistory(tab);
+  });
+
   // Remove button
   const removeBtn = document.createElement('button');
   removeBtn.className = 'tab-action-btn close-btn';
@@ -1066,6 +1066,7 @@ function createHistoryItem(tab) {
 
   actions.appendChild(timeEl);
   actions.appendChild(restoreBtn);
+  actions.appendChild(vaultBtn);
   actions.appendChild(removeBtn);
 
   item.appendChild(favicon);
@@ -1108,6 +1109,39 @@ async function removeFromHistory(tabIds) {
   } else {
     showToast('Error: ' + (response.error || 'Unknown error'), 'error');
   }
+}
+
+// Vault a tab from history (add to vault without opening)
+async function vaultFromHistory(tab) {
+  // Create a new vault group with today's date
+  const groupName = `From History - ${new Date().toLocaleDateString()}`;
+
+  // Check if a group with this name exists, otherwise create one
+  const vault = await VaultStorage.getVault();
+  let existingGroup = vault.groups.find(g => g.name === groupName);
+
+  if (existingGroup) {
+    // Add to existing group
+    await VaultStorage.addTabsToGroup(existingGroup.id, [{
+      url: tab.url,
+      title: tab.title,
+      favIconUrl: tab.favIconUrl
+    }]);
+  } else {
+    // Create new group
+    await VaultStorage.addGroup(groupName, [{
+      url: tab.url,
+      title: tab.title,
+      favIconUrl: tab.favIconUrl
+    }]);
+  }
+
+  // Remove from history
+  await TabHistory.removeFromHistory(tab.id);
+
+  showToast('Added to vault', 'success');
+  await renderHistorySection();
+  await renderVaultGroups();
 }
 
 // Create a group card element
@@ -1166,40 +1200,52 @@ function createGroupCard(group) {
   info.appendChild(count);
 
   const actions = document.createElement('div');
-  actions.className = 'group-actions';
+  actions.className = 'group-actions group-icon-actions';
 
   const restoreBtn = document.createElement('button');
-  restoreBtn.className = 'btn btn-primary btn-small restore-group-btn';
-  restoreBtn.textContent = 'Restore';
+  restoreBtn.className = 'tab-action-btn group-action-btn restore-btn';
+  restoreBtn.textContent = '\u2197'; // ↗ North East Arrow
+  restoreBtn.title = 'Restore All';
+  restoreBtn.setAttribute('aria-label', 'Restore all tabs');
   restoreBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     await restoreGroup(group.id);
   });
 
   const copyBtn = document.createElement('button');
-  copyBtn.className = 'btn btn-secondary btn-small copy-group-btn';
-  copyBtn.textContent = 'Copy';
-  copyBtn.title = 'Open tabs without removing from vault';
+  copyBtn.className = 'tab-action-btn group-action-btn copy-btn';
+  copyBtn.textContent = '\u29C9'; // ⧉ Two Joined Squares
+  copyBtn.title = 'Copy all URLs to clipboard';
+  copyBtn.setAttribute('aria-label', 'Copy all URLs');
   copyBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    await duplicateGroup(group.id);
+    await copyGroupUrls(group);
   });
 
-  // Menu button with rename/delete options
-  const menuBtn = document.createElement('button');
-  menuBtn.className = 'btn btn-secondary btn-small group-menu-btn';
-  menuBtn.textContent = '\u22EE'; // Vertical ellipsis
-  menuBtn.setAttribute('aria-haspopup', 'menu');
-  menuBtn.setAttribute('aria-label', 'Group options');
-  menuBtn.title = 'Group options';
-  menuBtn.addEventListener('click', (e) => {
+  const renameBtn = document.createElement('button');
+  renameBtn.className = 'tab-action-btn group-action-btn rename-btn';
+  renameBtn.textContent = '\u270E'; // ✎ Lower Right Pencil
+  renameBtn.title = 'Rename';
+  renameBtn.setAttribute('aria-label', 'Rename group');
+  renameBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    showGroupMenu(group, menuBtn);
+    await showRenameDialog(group);
+  });
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'tab-action-btn group-action-btn delete-btn';
+  deleteBtn.textContent = '\u2715'; // ✕ Multiplication X
+  deleteBtn.title = 'Delete';
+  deleteBtn.setAttribute('aria-label', 'Delete group');
+  deleteBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await deleteGroup(group);
   });
 
   actions.appendChild(restoreBtn);
   actions.appendChild(copyBtn);
-  actions.appendChild(menuBtn);
+  actions.appendChild(renameBtn);
+  actions.appendChild(deleteBtn);
 
   header.appendChild(dragHandle);
   header.appendChild(expand);
@@ -1286,63 +1332,45 @@ function createTabItem(tab, groupId) {
   item.addEventListener('dragover', handleDragOver);
   item.addEventListener('drop', handleDrop);
 
-  const favicon = document.createElement('img');
-  favicon.className = 'tab-favicon';
-  favicon.src = tab.favIconUrl || getDefaultFavicon();
-  favicon.alt = '';
-  favicon.onerror = () => {
-    favicon.src = getDefaultFavicon();
-  };
-
-  const info = document.createElement('div');
-  info.className = 'tab-info';
-
-  const titleRow = document.createElement('div');
-  titleRow.className = 'tab-title-row';
-
-  const title = document.createElement('div');
-  title.className = 'tab-title';
-  title.textContent = tab.title || 'Untitled';
-
-  titleRow.appendChild(title);
-
-  // Add active badge if tab is open
-  if (isActive) {
-    const activeBadge = document.createElement('span');
-    activeBadge.className = 'active-badge';
-    activeBadge.textContent = 'Active';
-    titleRow.appendChild(activeBadge);
-  }
-
-  const url = document.createElement('div');
-  url.className = 'tab-url';
-  url.textContent = truncateUrl(tab.url);
-
-  info.appendChild(titleRow);
-  info.appendChild(url);
+  const favicon = createFavicon(tab.favIconUrl);
+  const info = createTabInfo(tab.title, tab.url, isActive);
 
   const actions = document.createElement('div');
-  actions.className = 'tab-actions';
+  actions.className = 'tab-actions vault-item-actions';
 
   const restoreBtn = document.createElement('button');
-  restoreBtn.className = 'btn btn-secondary btn-small restore-tab-btn';
-  restoreBtn.textContent = 'Restore';
+  restoreBtn.className = 'tab-action-btn vault-item-btn restore-btn';
+  restoreBtn.textContent = '\u2197'; // ↗ North East Arrow
+  restoreBtn.title = 'Restore';
+  restoreBtn.setAttribute('aria-label', 'Restore tab');
   restoreBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     await restoreTab(groupId, tab.id);
   });
 
   const copyBtn = document.createElement('button');
-  copyBtn.className = 'btn btn-secondary btn-small copy-tab-btn';
-  copyBtn.textContent = 'Copy';
-  copyBtn.title = 'Open without removing from vault';
+  copyBtn.className = 'tab-action-btn vault-item-btn copy-btn';
+  copyBtn.textContent = '\u29C9'; // ⧉ Two Joined Squares
+  copyBtn.title = 'Copy URL to clipboard';
+  copyBtn.setAttribute('aria-label', 'Copy URL to clipboard');
   copyBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    await duplicateTab(groupId, tab.id);
+    await copyTabUrl(tab);
+  });
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'tab-action-btn vault-item-btn delete-btn';
+  deleteBtn.textContent = '\u2715'; // ✕ Multiplication X
+  deleteBtn.title = 'Delete';
+  deleteBtn.setAttribute('aria-label', 'Delete from vault');
+  deleteBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await deleteVaultTab(groupId, tab.id);
   });
 
   actions.appendChild(restoreBtn);
   actions.appendChild(copyBtn);
+  actions.appendChild(deleteBtn);
 
   item.appendChild(favicon);
   item.appendChild(info);
@@ -1374,11 +1402,6 @@ function setupEventListeners() {
   // Home tabs section toggle
   document.getElementById('homeTabsHeader').addEventListener('click', toggleHomeTabsSection);
 
-  // Edit patterns button (switches to Settings tab)
-  document.getElementById('editPatternsBtn').addEventListener('click', () => {
-    switchToTab('settings');
-  });
-
   // Select All / Deselect All
   document.getElementById('selectAllBtn').addEventListener('click', selectAllTabs);
   document.getElementById('deselectAllBtn').addEventListener('click', deselectAllTabs);
@@ -1395,9 +1418,14 @@ function setupEventListeners() {
     radio.addEventListener('change', handleThemeModeChange);
   });
 
-  // Palette selection
-  document.querySelectorAll('.palette-btn').forEach(btn => {
-    btn.addEventListener('click', () => handlePaletteChange(btn.dataset.palette));
+  // Light palette selection
+  document.querySelectorAll('#lightPaletteSelector .palette-btn').forEach(btn => {
+    btn.addEventListener('click', () => handlePaletteChange(btn.dataset.palette, 'light'));
+  });
+
+  // Dark palette selection
+  document.querySelectorAll('#darkPaletteSelector .palette-btn').forEach(btn => {
+    btn.addEventListener('click', () => handlePaletteChange(btn.dataset.palette, 'dark'));
   });
 
   // Unified search functionality
@@ -1481,26 +1509,24 @@ function updateSelectedCount() {
   document.getElementById('selectedCount').textContent = `${selectedTabIds.size} selected`;
 }
 
-// Select all open tabs
-function selectAllTabs() {
-  const checkboxes = document.querySelectorAll('.domain-tab-checkbox');
-  checkboxes.forEach(cb => {
-    if (!cb.checked) {
-      cb.checked = true;
+// Set all tab checkboxes to a specific state
+function setAllTabCheckboxes(checked) {
+  document.querySelectorAll('.domain-tab-checkbox').forEach(cb => {
+    if (cb.checked !== checked) {
+      cb.checked = checked;
       cb.dispatchEvent(new Event('change'));
     }
   });
 }
 
+// Select all open tabs
+function selectAllTabs() {
+  setAllTabCheckboxes(true);
+}
+
 // Deselect all open tabs
 function deselectAllTabs() {
-  const checkboxes = document.querySelectorAll('.domain-tab-checkbox');
-  checkboxes.forEach(cb => {
-    if (cb.checked) {
-      cb.checked = false;
-      cb.dispatchEvent(new Event('change'));
-    }
-  });
+  setAllTabCheckboxes(false);
 }
 
 // Vault selected tabs (renamed from shutdownSelectedTabs)
@@ -1646,12 +1672,7 @@ async function renderSearchResults() {
   // Filter tabs across all groups
   const results = [];
   for (const group of vault.groups) {
-    const matchingTabs = group.tabs.filter(tab => {
-      const titleMatch = (tab.title || '').toLowerCase().includes(currentSearchQuery);
-      const urlMatch = (tab.url || '').toLowerCase().includes(currentSearchQuery);
-      return titleMatch || urlMatch;
-    });
-
+    const matchingTabs = group.tabs.filter(tab => matchesSearch(tab, currentSearchQuery));
     if (matchingTabs.length > 0) {
       results.push({ group, tabs: matchingTabs });
     }
@@ -1804,13 +1825,18 @@ function hideConfirmDialog() {
 }
 
 /**
- * Show a themed confirmation dialog
- * @param {string} title - Dialog title
- * @param {string} message - Message to display
- * @param {string} confirmText - Text for confirm button (default: "OK")
- * @returns {Promise<boolean>} - True if confirmed, false if cancelled
+ * Show a modal dialog (confirm or prompt)
+ * @param {Object} options - Dialog options
+ * @param {string} options.title - Dialog title
+ * @param {string} options.message - Message to display
+ * @param {string} [options.confirmText='OK'] - Text for confirm button
+ * @param {boolean} [options.showInput=false] - Whether to show input field
+ * @param {string} [options.defaultValue=''] - Default input value (if showInput)
+ * @returns {Promise<boolean|string|null>} - boolean for confirm, string/null for prompt
  */
-function showModalConfirm(title, message, confirmText = 'OK') {
+function showModal(options) {
+  const { title, message, confirmText = 'OK', showInput = false, defaultValue = '' } = options;
+
   return new Promise((resolve) => {
     const dialog = document.getElementById('modalDialog');
     const titleEl = document.getElementById('modalDialogTitle');
@@ -1821,81 +1847,33 @@ function showModalConfirm(title, message, confirmText = 'OK') {
 
     titleEl.textContent = title;
     messageEl.textContent = message;
-    inputEl.classList.add('hidden');
     confirmBtn.textContent = confirmText;
 
+    if (showInput) {
+      inputEl.classList.remove('hidden');
+      inputEl.value = defaultValue;
+    } else {
+      inputEl.classList.add('hidden');
+    }
+
     const cleanup = () => {
       dialog.classList.add('hidden');
       confirmBtn.removeEventListener('click', onConfirm);
       cancelBtn.removeEventListener('click', onCancel);
-      document.removeEventListener('keydown', onKeydown);
-    };
-
-    const onConfirm = () => {
-      cleanup();
-      resolve(true);
-    };
-
-    const onCancel = () => {
-      cleanup();
-      resolve(false);
-    };
-
-    const onKeydown = (e) => {
-      if (e.key === 'Escape') {
-        onCancel();
-      } else if (e.key === 'Enter') {
-        onConfirm();
+      if (showInput) {
+        inputEl.removeEventListener('keydown', onInputKeydown);
       }
-    };
-
-    confirmBtn.addEventListener('click', onConfirm);
-    cancelBtn.addEventListener('click', onCancel);
-    document.addEventListener('keydown', onKeydown);
-
-    dialog.classList.remove('hidden');
-    confirmBtn.focus();
-  });
-}
-
-/**
- * Show a themed prompt dialog
- * @param {string} title - Dialog title
- * @param {string} message - Message to display
- * @param {string} defaultValue - Default input value
- * @returns {Promise<string|null>} - Input value if confirmed, null if cancelled
- */
-function showModalPrompt(title, message, defaultValue = '') {
-  return new Promise((resolve) => {
-    const dialog = document.getElementById('modalDialog');
-    const titleEl = document.getElementById('modalDialogTitle');
-    const messageEl = document.getElementById('modalDialogMessage');
-    const inputEl = document.getElementById('modalDialogInput');
-    const confirmBtn = document.getElementById('modalDialogConfirm');
-    const cancelBtn = document.getElementById('modalDialogCancel');
-
-    titleEl.textContent = title;
-    messageEl.textContent = message;
-    inputEl.classList.remove('hidden');
-    inputEl.value = defaultValue;
-    confirmBtn.textContent = 'OK';
-
-    const cleanup = () => {
-      dialog.classList.add('hidden');
-      confirmBtn.removeEventListener('click', onConfirm);
-      cancelBtn.removeEventListener('click', onCancel);
-      inputEl.removeEventListener('keydown', onInputKeydown);
       document.removeEventListener('keydown', onKeydown);
     };
 
     const onConfirm = () => {
       cleanup();
-      resolve(inputEl.value);
+      resolve(showInput ? inputEl.value : true);
     };
 
     const onCancel = () => {
       cleanup();
-      resolve(null);
+      resolve(showInput ? null : false);
     };
 
     const onInputKeydown = (e) => {
@@ -1908,18 +1886,49 @@ function showModalPrompt(title, message, defaultValue = '') {
     const onKeydown = (e) => {
       if (e.key === 'Escape') {
         onCancel();
+      } else if (!showInput && e.key === 'Enter') {
+        onConfirm();
       }
     };
 
     confirmBtn.addEventListener('click', onConfirm);
     cancelBtn.addEventListener('click', onCancel);
-    inputEl.addEventListener('keydown', onInputKeydown);
+    if (showInput) {
+      inputEl.addEventListener('keydown', onInputKeydown);
+    }
     document.addEventListener('keydown', onKeydown);
 
     dialog.classList.remove('hidden');
-    inputEl.focus();
-    inputEl.select();
+
+    if (showInput) {
+      inputEl.focus();
+      inputEl.select();
+    } else {
+      confirmBtn.focus();
+    }
   });
+}
+
+/**
+ * Show a themed confirmation dialog
+ * @param {string} title - Dialog title
+ * @param {string} message - Message to display
+ * @param {string} confirmText - Text for confirm button (default: "OK")
+ * @returns {Promise<boolean>} - True if confirmed, false if cancelled
+ */
+function showModalConfirm(title, message, confirmText = 'OK') {
+  return showModal({ title, message, confirmText });
+}
+
+/**
+ * Show a themed prompt dialog
+ * @param {string} title - Dialog title
+ * @param {string} message - Message to display
+ * @param {string} defaultValue - Default input value
+ * @returns {Promise<string|null>} - Input value if confirmed, null if cancelled
+ */
+function showModalPrompt(title, message, defaultValue = '') {
+  return showModal({ title, message, showInput: true, defaultValue });
 }
 
 // Handle confirm button click
@@ -2017,130 +2026,39 @@ async function restoreTab(groupId, tabId) {
   }
 }
 
-// Duplicate a group (open without removing from vault)
-async function duplicateGroup(groupId) {
-  const response = await chrome.runtime.sendMessage({
-    action: 'duplicate-group',
-    groupId: groupId
-  });
-
-  if (response.success) {
-    showToast(`Opened ${response.count} ${pluralizeTabs(response.count)} (kept in vault)`, 'success');
-    await updateLiveTabCount();
-  } else {
-    showToast('Error: ' + (response.error || 'Unknown error'), 'error');
+// Copy all URLs from a group to clipboard
+async function copyGroupUrls(group) {
+  try {
+    const urls = group.tabs.map(t => t.url).join('\n');
+    await navigator.clipboard.writeText(urls);
+    showToast(`Copied ${group.tabs.length} URL${group.tabs.length !== 1 ? 's' : ''}`, 'success');
+  } catch (error) {
+    showToast('Failed to copy to clipboard', 'error');
   }
 }
 
-// Duplicate a single tab (open without removing from vault)
-async function duplicateTab(groupId, tabId) {
-  const response = await chrome.runtime.sendMessage({
-    action: 'duplicate-tabs',
-    groupId: groupId,
-    tabIds: [tabId]
-  });
-
-  if (response.success) {
-    showToast('Tab opened (kept in vault)', 'success');
-    await updateLiveTabCount();
-  } else {
-    showToast('Error: ' + (response.error || 'Unknown error'), 'error');
+// Copy a single tab URL to clipboard
+async function copyTabUrl(tab) {
+  try {
+    await navigator.clipboard.writeText(tab.url);
+    showToast('Copied to clipboard', 'success');
+  } catch (error) {
+    showToast('Failed to copy to clipboard', 'error');
   }
 }
 
-// Show group menu (rename/delete/move)
-async function showGroupMenu(group, anchorEl) {
-  // Remove any existing menu
-  const existingMenu = document.querySelector('.group-menu-dropdown');
-  if (existingMenu) existingMenu.remove();
+// Delete a single tab from the vault
+async function deleteVaultTab(groupId, tabId) {
+  await VaultStorage.removeTabsFromGroup(groupId, [tabId]);
 
-  // Get vault to determine group position
-  const vault = await VaultStorage.getVault();
-  const groupIndex = vault.groups.findIndex(g => g.id === group.id);
-  const isFirst = groupIndex === 0;
-  const isLast = groupIndex === vault.groups.length - 1;
-
-  const menu = document.createElement('div');
-  menu.className = 'group-menu-dropdown';
-  menu.setAttribute('role', 'menu');
-
-  const renameOption = document.createElement('button');
-  renameOption.className = 'menu-option';
-  renameOption.setAttribute('role', 'menuitem');
-  renameOption.textContent = 'Rename';
-  renameOption.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    menu.remove();
-    await showRenameDialog(group);
-  });
-
-  // Move Up option (disabled if first)
-  const moveUpOption = document.createElement('button');
-  moveUpOption.className = 'menu-option';
-  moveUpOption.setAttribute('role', 'menuitem');
-  moveUpOption.textContent = 'Move Up';
-  moveUpOption.disabled = isFirst;
-  if (isFirst) {
-    moveUpOption.classList.add('menu-option-disabled');
-    moveUpOption.setAttribute('aria-disabled', 'true');
+  // Check if group is now empty and remove it
+  const group = await VaultStorage.getGroup(groupId);
+  if (group && group.tabs.length === 0) {
+    await VaultStorage.removeGroup(groupId);
   }
-  moveUpOption.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (isFirst) return;
-    menu.remove();
-    await moveGroup(group.id, -1);
-    showToast('Group moved up', 'success');
-  });
 
-  // Move Down option (disabled if last)
-  const moveDownOption = document.createElement('button');
-  moveDownOption.className = 'menu-option';
-  moveDownOption.setAttribute('role', 'menuitem');
-  moveDownOption.textContent = 'Move Down';
-  moveDownOption.disabled = isLast;
-  if (isLast) {
-    moveDownOption.classList.add('menu-option-disabled');
-    moveDownOption.setAttribute('aria-disabled', 'true');
-  }
-  moveDownOption.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (isLast) return;
-    menu.remove();
-    await moveGroup(group.id, 1);
-    showToast('Group moved down', 'success');
-  });
-
-  const deleteOption = document.createElement('button');
-  deleteOption.className = 'menu-option menu-option-danger';
-  deleteOption.setAttribute('role', 'menuitem');
-  deleteOption.textContent = 'Delete';
-  deleteOption.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    menu.remove();
-    await deleteGroup(group);
-  });
-
-  menu.appendChild(renameOption);
-  menu.appendChild(moveUpOption);
-  menu.appendChild(moveDownOption);
-  menu.appendChild(deleteOption);
-
-  // Position menu relative to anchor
-  const rect = anchorEl.getBoundingClientRect();
-  menu.style.position = 'fixed';
-  menu.style.top = `${rect.bottom + 4}px`;
-  menu.style.right = `${window.innerWidth - rect.right}px`;
-
-  document.body.appendChild(menu);
-
-  // Close menu when clicking elsewhere
-  const closeMenu = (e) => {
-    if (!menu.contains(e.target)) {
-      menu.remove();
-      document.removeEventListener('click', closeMenu);
-    }
-  };
-  setTimeout(() => document.addEventListener('click', closeMenu), 0);
+  showToast('Tab removed', 'success');
+  await renderVaultGroups();
 }
 
 // Show rename dialog
@@ -2172,38 +2090,9 @@ async function deleteGroup(group) {
   }
 }
 
-// Move a group up or down
-async function moveGroup(groupId, direction) {
-  const vault = await VaultStorage.getVault();
-  const index = vault.groups.findIndex(g => g.id === groupId);
-
-  if (index === -1) return;
-
-  const newIndex = index + direction;
-  if (newIndex < 0 || newIndex >= vault.groups.length) return;
-
-  // Swap groups
-  [vault.groups[index], vault.groups[newIndex]] = [vault.groups[newIndex], vault.groups[index]];
-
-  await VaultStorage.saveVault(vault);
-  await renderVaultGroups();
-}
-
-// Helper aliases for remaining UIHelpers functions
-const getDefaultFavicon = UIHelpers.getDefaultFavicon.bind(UIHelpers);
-const truncateUrl = UIHelpers.truncateUrl.bind(UIHelpers);
-
 // ============================================
-// DRAG AND DROP HANDLERS (Infrastructure for TV2-007)
+// DRAG AND DROP HANDLERS
 // ============================================
-// These handlers provide the foundation for dragging tabs between vault groups.
-// Full implementation is in TV2-007.
-//
-// Drag flow:
-// 1. User starts dragging a tab item (dragstart)
-// 2. As they drag over groups/tabs, visual feedback is shown (dragover)
-// 3. On drop, the tab is moved to the target group (drop)
-// 4. Cleanup happens after drag ends (dragend)
 
 // Track the currently dragged item
 let draggedItem = null;
@@ -2213,8 +2102,14 @@ let isDraggingGroup = false; // true when dragging a whole group to reorder
 
 // Handle drag start on a tab item
 function handleDragStart(e) {
+  // Stop propagation to prevent group dragstart from firing
+  e.stopPropagation();
+
   draggedItem = e.target.closest('.tab-item');
   if (!draggedItem) return;
+
+  // Reset group dragging flag - we're dragging a tab, not a group
+  isDraggingGroup = false;
 
   draggedTabId = draggedItem.dataset.tabId;
   draggedGroupId = draggedItem.dataset.groupId;
@@ -2225,6 +2120,7 @@ function handleDragStart(e) {
   // Set drag data
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', JSON.stringify({
+    type: 'tab',
     tabId: draggedTabId,
     groupId: draggedGroupId
   }));
@@ -2232,23 +2128,27 @@ function handleDragStart(e) {
 
 // Handle drag end (cleanup)
 function handleDragEnd(e) {
+  e.stopPropagation(); // Prevent bubbling to group drag end handler
+
   if (draggedItem) {
     draggedItem.classList.remove('dragging');
   }
 
   // Clear all drag-over states
-  document.querySelectorAll('.drag-over, .drop-target').forEach(el => {
-    el.classList.remove('drag-over', 'drop-target');
+  document.querySelectorAll('.drag-over, .drop-target, .drop-above, .drop-below').forEach(el => {
+    el.classList.remove('drag-over', 'drop-target', 'drop-above', 'drop-below');
   });
 
   draggedItem = null;
   draggedTabId = null;
   draggedGroupId = null;
+  isDraggingGroup = false;
 }
 
 // Handle drag over a tab item (for positioning within a group)
 function handleDragOver(e) {
   e.preventDefault();
+  e.stopPropagation(); // Prevent bubbling to group drag over handler
   e.dataTransfer.dropEffect = 'move';
 
   const target = e.target.closest('.tab-item');
@@ -2265,6 +2165,7 @@ function handleDragOver(e) {
 // Handle drop on a tab item
 async function handleDrop(e) {
   e.preventDefault();
+  e.stopPropagation(); // Prevent bubbling to group drop handler
 
   const target = e.target.closest('.tab-item');
   if (!target || target === draggedItem) return;
@@ -2376,6 +2277,18 @@ async function moveTabToPosition(sourceGroupId, tabId, targetGroupId, beforeTabI
     targetGroup.tabs.splice(beforeIndex, 0, tab);
   }
 
+  // Remove source group if now empty
+  if (sourceGroup.tabs.length === 0) {
+    const sourceIndex = vault.groups.findIndex(g => g.id === sourceGroupId);
+    if (sourceIndex !== -1) {
+      vault.groups.splice(sourceIndex, 1);
+      expandedVaultGroups.delete(sourceGroupId);
+    }
+  }
+
+  // Expand target group to show the moved tab
+  expandedVaultGroups.add(targetGroupId);
+
   // Save and re-render
   await VaultStorage.saveVault(vault);
   await renderVaultGroups();
@@ -2400,6 +2313,18 @@ async function moveTabToGroup(sourceGroupId, tabId, targetGroupId) {
 
   // Add to target group at the end
   targetGroup.tabs.push(tab);
+
+  // Remove source group if now empty
+  if (sourceGroup.tabs.length === 0) {
+    const sourceIndex = vault.groups.findIndex(g => g.id === sourceGroupId);
+    if (sourceIndex !== -1) {
+      vault.groups.splice(sourceIndex, 1);
+      expandedVaultGroups.delete(sourceGroupId);
+    }
+  }
+
+  // Expand target group to show the moved tab
+  expandedVaultGroups.add(targetGroupId);
 
   // Save and re-render
   await VaultStorage.saveVault(vault);

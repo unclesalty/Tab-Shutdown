@@ -77,6 +77,21 @@ const UrlUtils = {
     const hostname = this.getDomainFromUrl(tabUrl);
     if (!hostname) return false;
     return hostname === domain || hostname.endsWith('.' + domain);
+  },
+
+  /**
+   * Check if URL is safe to open (prevents javascript:, data:, file: injection)
+   * @param {string} url
+   * @returns {boolean}
+   */
+  isValidUrlForOpening(url) {
+    if (!url || typeof url !== 'string') return false;
+    const lower = url.toLowerCase().trim();
+    if (lower.startsWith('javascript:')) return false;
+    if (lower.startsWith('data:')) return false;
+    if (lower.startsWith('file:')) return false;
+    if (lower.startsWith('vbscript:')) return false;
+    return true;
   }
 };
 
