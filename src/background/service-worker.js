@@ -19,6 +19,32 @@ function extractTabData(tab) {
   };
 }
 
+/**
+ * Navigate to the first tab in an array and focus its window
+ * @param {Object|null} tab - Chrome tab object (or null to skip)
+ */
+async function navigateToFirstTab(tab) {
+  if (!tab) return;
+  await chrome.tabs.update(tab.id, { active: true });
+  await chrome.windows.update(tab.windowId, { focused: true });
+}
+
+/**
+ * Open multiple tabs from URL list
+ * @param {Array} tabs - Array of tab objects with url property
+ * @returns {Promise<Object|null>} - First opened tab or null
+ */
+async function openTabs(tabs) {
+  let firstTab = null;
+  for (const tab of tabs) {
+    // Validate URL before opening (prevent javascript:, data:, file: injection)
+    if (!UrlUtils.isValidUrlForOpening(tab.url)) continue;
+    const newTab = await chrome.tabs.create({ url: tab.url, active: false });
+    if (!firstTab) firstTab = newTab;
+  }
+  return firstTab;
+}
+
 // Handle extension install/update - preserve vault data
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install') {
@@ -89,6 +115,15 @@ chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
   // Check if it's a home tab - home tabs don't go to history
   const homePatterns = await HomeTabs.getHomePatterns();
   if (HomeTabs.isHomeTabSync(tabInfo.url, homePatterns)) {
+    return;
+  }
+
+  // Check if this URL already exists in the vault - don't add to history
+  const vault = await VaultStorage.getVault();
+  const urlInVault = vault.groups.some(group =>
+    group.tabs.some(tab => tab.url === tabInfo.url)
+  );
+  if (urlInVault) {
     return;
   }
 
@@ -315,21 +350,12 @@ async function restoreFromHistory(tabIds) {
     const tabIdSet = new Set(tabIds);
     const tabsToRestore = history.tabs.filter(t => tabIdSet.has(t.id));
 
-    // Open the tabs
-    let firstTab = null;
-    for (const tab of tabsToRestore) {
-      const newTab = await chrome.tabs.create({ url: tab.url, active: false });
-      if (!firstTab) firstTab = newTab;
-    }
+    const firstTab = await openTabs(tabsToRestore);
 
     // Remove from history
     await TabHistory.removeManyFromHistory(tabIds);
 
-    // Navigate to the first restored tab
-    if (firstTab) {
-      await chrome.tabs.update(firstTab.id, { active: true });
-      await chrome.windows.update(firstTab.windowId, { focused: true });
-    }
+    await navigateToFirstTab(firstTab);
 
     return { success: true, count: tabsToRestore.length };
   } catch (error) {
@@ -422,8 +448,7 @@ async function shutdownTabs(tabIds, groupName) {
       return { success: true, count: 0, message: 'All selected tabs are home tabs' };
     }
 
-    const safeName = (groupName || 'Vaulted Tabs').substring(0, 200);
-    await VaultStorage.addGroup(safeName, tabsToVault.map(extractTabData));
+    await VaultStorage.addGroup(groupName || 'Vaulted Tabs', tabsToVault.map(extractTabData));
     await closeTabsByExtension(tabsToVault.map(t => t.id));
 
     return { success: true, count: tabsToVault.length };
@@ -509,21 +534,9 @@ async function restoreGroup(groupId) {
       return { success: false, error: 'Group not found' };
     }
 
-    // Open all tabs, track the first one for navigation
-    let firstTab = null;
-    for (const tab of group.tabs) {
-      const newTab = await chrome.tabs.create({ url: tab.url, active: false });
-      if (!firstTab) firstTab = newTab;
-    }
-
-    // Remove group from vault
+    const firstTab = await openTabs(group.tabs);
     await VaultStorage.removeGroup(groupId);
-
-    // Navigate to the first restored tab
-    if (firstTab) {
-      await chrome.tabs.update(firstTab.id, { active: true });
-      await chrome.windows.update(firstTab.windowId, { focused: true });
-    }
+    await navigateToFirstTab(firstTab);
 
     return { success: true, count: group.tabs.length, navigatedTabId: firstTab?.id };
   } catch (error) {
@@ -544,24 +557,11 @@ async function restoreTabs(groupId, tabIds) {
       return { success: false, error: 'Group not found' };
     }
 
-    const tabIdSet = new Set(tabIds);
-    const tabsToRestore = group.tabs.filter(t => tabIdSet.has(t.id));
+    const tabsToRestore = group.tabs.filter(t => new Set(tabIds).has(t.id));
+    const firstTab = await openTabs(tabsToRestore);
 
-    // Open the tabs, track the first one for navigation
-    let firstTab = null;
-    for (const tab of tabsToRestore) {
-      const newTab = await chrome.tabs.create({ url: tab.url, active: false });
-      if (!firstTab) firstTab = newTab;
-    }
-
-    // Remove tabs from group
     await VaultStorage.removeTabsFromGroup(groupId, tabIds);
-
-    // Navigate to the first restored tab
-    if (firstTab) {
-      await chrome.tabs.update(firstTab.id, { active: true });
-      await chrome.windows.update(firstTab.windowId, { focused: true });
-    }
+    await navigateToFirstTab(firstTab);
 
     // Check if group is now empty and remove it
     const updatedGroup = await VaultStorage.getGroup(groupId);
@@ -579,49 +579,32 @@ async function restoreTabs(groupId, tabIds) {
 /**
  * Open tabs from a group WITHOUT removing from vault (duplicate)
  * @param {string} groupId
+ * @param {string[]} [tabIds] - Optional: specific tab IDs to duplicate (all if omitted)
  */
-async function duplicateGroup(groupId) {
+async function duplicateTabs(groupId, tabIds = null) {
   try {
     const group = await VaultStorage.getGroup(groupId);
     if (!group) {
       return { success: false, error: 'Group not found' };
     }
 
-    // Open all tabs without removing from vault
-    for (const tab of group.tabs) {
-      await chrome.tabs.create({ url: tab.url, active: false });
-    }
+    const tabsToDuplicate = tabIds
+      ? group.tabs.filter(t => new Set(tabIds).has(t.id))
+      : group.tabs;
 
-    return { success: true, count: group.tabs.length };
-  } catch (error) {
-    console.error('Error in duplicateGroup:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * Open specific tabs from a group WITHOUT removing from vault (duplicate)
- * @param {string} groupId
- * @param {string[]} tabIds - Vault tab IDs to duplicate
- */
-async function duplicateTabs(groupId, tabIds) {
-  try {
-    const group = await VaultStorage.getGroup(groupId);
-    if (!group) {
-      return { success: false, error: 'Group not found' };
-    }
-
-    const tabIdSet = new Set(tabIds);
-    const tabsToDuplicate = group.tabs.filter(t => tabIdSet.has(t.id));
-
-    // Open the tabs without removing
-    for (const tab of tabsToDuplicate) {
-      await chrome.tabs.create({ url: tab.url, active: false });
-    }
+    await openTabs(tabsToDuplicate);
 
     return { success: true, count: tabsToDuplicate.length };
   } catch (error) {
     console.error('Error in duplicateTabs:', error);
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * Open all tabs from a group WITHOUT removing from vault (duplicate)
+ * @param {string} groupId
+ */
+async function duplicateGroup(groupId) {
+  return duplicateTabs(groupId);
 }

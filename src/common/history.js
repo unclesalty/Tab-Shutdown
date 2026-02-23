@@ -74,15 +74,23 @@ async function saveHistory(history) {
 /**
  * Add a tab to history
  * @param {Object} tab - Tab object {url, title, favIconUrl}
- * @returns {Promise<Object>} - The added history entry
+ * @returns {Promise<Object|null>} - The added history entry, or null if duplicate
  */
 async function addToHistory(tab) {
   const history = await getHistory();
+  const url = tab.url || '';
+
+  // Check for duplicate URL - skip if already exists
+  const existingEntry = history.tabs.find(t => t.url === url);
+  if (existingEntry) {
+    return null; // Skip duplicate
+  }
+
   const now = Date.now();
 
   const entry = {
     id: generateId(),
-    url: tab.url || '',
+    url: url,
     title: tab.title || 'Untitled',
     favIconUrl: tab.favIconUrl || '',
     closedAt: now

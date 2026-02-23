@@ -39,6 +39,91 @@
   --warning: #ffc107;
 }
 
+/* Sunrise Citrus - Warm peach/coral tones */
+[data-theme="sunrise-citrus"] {
+  --bg: #fffaf5;
+  --bg-surface: #fff5ed;
+  --bg-hover: #ffebe0;
+  --primary: #f97316;
+  --primary-hover: #ea580c;
+  --accent: #fb923c;
+  --text: #431407;
+  --text-secondary: #9a3412;
+  --text-on-primary: #ffffff;
+  --border: #fed7aa;
+  --success: #16a34a;
+  --error: #dc2626;
+  --warning: #d97706;
+}
+
+/* Ocean Breeze - Cool blue/teal */
+[data-theme="ocean-breeze"] {
+  --bg: #f0f9ff;
+  --bg-surface: #e0f2fe;
+  --bg-hover: #bae6fd;
+  --primary: #0ea5e9;
+  --primary-hover: #0284c7;
+  --accent: #38bdf8;
+  --text: #0c4a6e;
+  --text-secondary: #0369a1;
+  --text-on-primary: #ffffff;
+  --border: #7dd3fc;
+  --success: #16a34a;
+  --error: #dc2626;
+  --warning: #d97706;
+}
+
+/* Forest Moss - Natural green */
+[data-theme="forest-moss"] {
+  --bg: #f0fdf4;
+  --bg-surface: #dcfce7;
+  --bg-hover: #bbf7d0;
+  --primary: #16a34a;
+  --primary-hover: #15803d;
+  --accent: #22c55e;
+  --text: #14532d;
+  --text-secondary: #166534;
+  --text-on-primary: #ffffff;
+  --border: #86efac;
+  --success: #16a34a;
+  --error: #dc2626;
+  --warning: #d97706;
+}
+
+/* Lavender Mist - Soft purple/violet */
+[data-theme="lavender-mist"] {
+  --bg: #faf5ff;
+  --bg-surface: #f3e8ff;
+  --bg-hover: #e9d5ff;
+  --primary: #9333ea;
+  --primary-hover: #7e22ce;
+  --accent: #a855f7;
+  --text: #3b0764;
+  --text-secondary: #6b21a8;
+  --text-on-primary: #ffffff;
+  --border: #d8b4fe;
+  --success: #16a34a;
+  --error: #dc2626;
+  --warning: #d97706;
+}
+
+/* Warm Slate - Neutral warm gray */
+[data-theme="warm-slate"] {
+  --bg: #fafaf9;
+  --bg-surface: #f5f5f4;
+  --bg-hover: #e7e5e4;
+  --primary: #78716c;
+  --primary-hover: #57534e;
+  --accent: #a8a29e;
+  --text: #292524;
+  --text-secondary: #57534e;
+  --text-on-primary: #ffffff;
+  --border: #d6d3d1;
+  --success: #16a34a;
+  --error: #dc2626;
+  --warning: #d97706;
+}
+
 /* Midnight Glass - Deep blue with cyan accents */
 [data-theme="midnight-glass"] {
   --bg: #0f172a;
@@ -140,6 +225,18 @@
     --success: #22c55e;
     --error: #ef4444;
     --warning: #f59e0b;
+  }
+
+  /* Icon contrast fix for system dark mode */
+  :root:not([data-theme]) .tab-action-btn,
+  :root:not([data-theme]) .vault-item-btn,
+  :root:not([data-theme]) .group-action-btn {
+    color: var(--text);
+    opacity: 0.75;
+  }
+
+  :root:not([data-theme]) .vault-item-actions {
+    opacity: 0.75;
   }
 }
 
@@ -1029,6 +1126,92 @@ body {
   color: var(--success);
 }
 
+/* Vault item icon buttons */
+.vault-item-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.tab-item:hover .vault-item-actions {
+  opacity: 1;
+}
+
+.vault-item-btn {
+  font-size: 14px;
+  padding: 4px 6px;
+  min-width: 24px;
+}
+
+.vault-item-btn.restore-btn:hover {
+  color: var(--primary);
+}
+
+.vault-item-btn.copy-btn:hover {
+  color: var(--accent);
+}
+
+.vault-item-btn.delete-btn:hover {
+  color: var(--error);
+}
+
+/* Group header icon buttons */
+.group-icon-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.group-action-btn {
+  font-size: 14px;
+  padding: 6px 8px;
+  min-width: 28px;
+}
+
+.group-action-btn.restore-btn:hover {
+  color: var(--primary);
+}
+
+.group-action-btn.copy-btn:hover {
+  color: var(--accent);
+}
+
+.group-action-btn.rename-btn:hover {
+  color: var(--warning);
+}
+
+.group-action-btn.delete-btn:hover {
+  color: var(--error);
+}
+
+/* Dark theme icon contrast fix - increase visibility of inactive icons */
+[data-theme="midnight-glass"] .tab-action-btn,
+[data-theme="midnight-glass"] .vault-item-btn,
+[data-theme="midnight-glass"] .group-action-btn,
+[data-theme="neon-ember"] .tab-action-btn,
+[data-theme="neon-ember"] .vault-item-btn,
+[data-theme="neon-ember"] .group-action-btn,
+[data-theme="soft-lavender"] .tab-action-btn,
+[data-theme="soft-lavender"] .vault-item-btn,
+[data-theme="soft-lavender"] .group-action-btn,
+[data-theme="arctic-mint"] .tab-action-btn,
+[data-theme="arctic-mint"] .vault-item-btn,
+[data-theme="arctic-mint"] .group-action-btn,
+[data-theme="slate-minimal"] .tab-action-btn,
+[data-theme="slate-minimal"] .vault-item-btn,
+[data-theme="slate-minimal"] .group-action-btn {
+  color: var(--text);
+  opacity: 0.75;
+}
+
+[data-theme="midnight-glass"] .vault-item-actions,
+[data-theme="neon-ember"] .vault-item-actions,
+[data-theme="soft-lavender"] .vault-item-actions,
+[data-theme="arctic-mint"] .vault-item-actions,
+[data-theme="slate-minimal"] .vault-item-actions {
+  opacity: 0.75;
+}
+
 /* Settings Panel */
 .settings-section {
   padding: 16px;
@@ -1171,6 +1354,7 @@ body {
   margin-bottom: 8px;
 }
 
+.light-palette-selector,
 .dark-palette-selector {
   margin-top: 8px;
 }
@@ -1227,6 +1411,27 @@ body {
 
 .palette-preview.slate-minimal {
   background: linear-gradient(135deg, #09090b 50%, #6366f1 50%);
+}
+
+/* Light palette previews */
+.palette-preview.sunrise-citrus {
+  background: linear-gradient(135deg, #fffaf5 50%, #f97316 50%);
+}
+
+.palette-preview.ocean-breeze {
+  background: linear-gradient(135deg, #f0f9ff 50%, #0ea5e9 50%);
+}
+
+.palette-preview.forest-moss {
+  background: linear-gradient(135deg, #f0fdf4 50%, #16a34a 50%);
+}
+
+.palette-preview.lavender-mist {
+  background: linear-gradient(135deg, #faf5ff 50%, #9333ea 50%);
+}
+
+.palette-preview.warm-slate {
+  background: linear-gradient(135deg, #fafaf9 50%, #78716c 50%);
 }
 
 .palette-name {
@@ -1543,6 +1748,35 @@ body {
   width: 100%;
 }
 
+/* History at bottom with upward expansion */
+.history-section.history-bottom {
+  display: flex;
+  flex-direction: column;
+  border-bottom: none;
+  border-top: 1px solid var(--border);
+  margin-top: auto; /* Push to bottom */
+}
+
+/* In bottom mode, header comes after content in DOM but visually at bottom */
+.history-section.history-bottom .history-header {
+  order: 2;
+}
+
+.history-section.history-bottom .history-list {
+  order: 1;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.history-section.history-bottom .history-empty {
+  order: 1;
+}
+
+.history-section.history-bottom .history-footer {
+  order: 1;
+}
+
+/* When collapsed (default), hide content but keep header visible */
 .history-section.collapsed .history-list,
 .history-section.collapsed .history-footer,
 .history-section.collapsed .history-empty {
@@ -1601,6 +1835,15 @@ body {
 
 .history-section.collapsed .history-expand {
   transform: rotate(-90deg);
+}
+
+/* For bottom history section, the arrow points up when collapsed */
+.history-section.history-bottom .history-expand {
+  transform: rotate(0deg); /* Up arrow when expanded */
+}
+
+.history-section.history-bottom.collapsed .history-expand {
+  transform: rotate(0deg); /* Up arrow always (content above) */
 }
 
 .history-list {

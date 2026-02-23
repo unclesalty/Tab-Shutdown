@@ -60,6 +60,19 @@ function generateId() {
 }
 
 /**
+ * Sanitize group name for safe storage and display
+ * @param {string} name
+ * @returns {string}
+ */
+function sanitizeGroupName(name) {
+  if (!name || typeof name !== 'string') return 'Untitled';
+  return name
+    .replace(/[<>]/g, '') // Remove angle brackets
+    .substring(0, 200)
+    .trim() || 'Untitled';
+}
+
+/**
  * Get the full vault object from storage
  * @returns {Promise<{groups: Array}>}
  */
@@ -103,7 +116,7 @@ async function addGroup(name, tabs = []) {
 
     const group = {
       id: generateId(),
-      name: name,
+      name: sanitizeGroupName(name),
       createdAt: now,
       tabs: tabs.map(tab => ({
         id: generateId(),
@@ -217,7 +230,7 @@ async function updateGroup(groupId, updates) {
     }
 
     if (updates.name !== undefined) {
-      group.name = updates.name;
+      group.name = sanitizeGroupName(updates.name);
     }
 
     await saveVault(vault);

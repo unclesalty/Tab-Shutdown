@@ -9,7 +9,7 @@ Each ticket includes a **Completion Promise** — the concrete condition to veri
 
 ## Phase 1: Home Tab Fixes
 
-### TG5-001: Fix Home Tab Pattern Cleanup on Removal
+### TG5-001: Fix Home Tab Pattern Cleanup on Removal [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 1.2
@@ -34,7 +34,7 @@ When a user adds a URL as a home tab, a pattern is stored in `HomeTabStorage`. W
 
 ---
 
-### TG5-002: Fix Manual Home Tab Close Handling
+### TG5-002: Fix Manual Home Tab Close Handling [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 1.1
@@ -60,7 +60,7 @@ Home tabs are protected from "Vault All" operations. However, manually closing a
 
 ## Phase 2: History Behavior Fixes
 
-### TG5-003: Prevent Restored Tabs from Re-entering History
+### TG5-003: Prevent Restored Tabs from Re-entering History [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 2.1
@@ -86,7 +86,7 @@ When a vault item is restored, then closed, it re-enters history as a duplicate.
 
 ---
 
-### TG5-004: Prevent Duplicate History Entries
+### TG5-004: Prevent Duplicate History Entries [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 2.2
@@ -111,7 +111,7 @@ Users can accumulate multiple history entries for the same URL by repeatedly ope
 
 ---
 
-### TG5-005: History Collapsed by Default
+### TG5-005: History Collapsed by Default [DONE]
 
 **Priority:** MEDIUM
 **PRD Reference:** Section 2.3
@@ -134,7 +134,7 @@ History should be unobtrusive — collapsed by default, expanded on demand.
 
 ---
 
-### TG5-006: History Position and Accordion Direction
+### TG5-006: History Position and Accordion Direction [DONE]
 
 **Priority:** MEDIUM
 **PRD Reference:** Section 2.4
@@ -162,7 +162,7 @@ History is supplementary — it should not push vault groups down. Placing it at
 
 ## Phase 3: Vault UI Improvements
 
-### TG5-007: Icon Buttons for Individual Vault Items
+### TG5-007: Icon Buttons for Individual Vault Items [DONE]
 
 **Priority:** MEDIUM
 **PRD Reference:** Section 3.1
@@ -190,7 +190,7 @@ History is supplementary — it should not push vault groups down. Placing it at
 
 ---
 
-### TG5-008: Icon Buttons for Vault Groups
+### TG5-008: Icon Buttons for Vault Groups [DONE]
 
 **Priority:** MEDIUM
 **PRD Reference:** Section 3.2
@@ -218,7 +218,7 @@ History is supplementary — it should not push vault groups down. Placing it at
 
 ---
 
-### TG5-009: Remove Move Up/Down Buttons
+### TG5-009: Remove Move Up/Down Buttons [DONE]
 
 **Priority:** LOW
 **PRD Reference:** Section 3.3
@@ -241,7 +241,7 @@ v4 added these for accessibility as alternatives to drag-and-drop. However, they
 
 ---
 
-### TG5-010: Fix Copy Button Behavior
+### TG5-010: Fix Copy Button Behavior [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 3.4
@@ -276,7 +276,7 @@ Currently, Copy button behaves identically to Restore — it opens tabs. The exp
 
 ---
 
-### TG5-011: Fix Drag-and-Drop Visual Update
+### TG5-011: Fix Drag-and-Drop Visual Update [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 3.5
@@ -303,7 +303,7 @@ Dragging items between vault sections shows a success alert, but the UI doesn't 
 
 ## Phase 4: Light Mode Themes
 
-### TG5-012: Add Light Theme Definitions
+### TG5-012: Add Light Theme Definitions [DONE]
 
 **Priority:** MEDIUM
 **PRD Reference:** Section 4.1
@@ -331,7 +331,7 @@ Dragging items between vault sections shows a success alert, but the UI doesn't 
 
 ---
 
-### TG5-013: Add Light Theme CSS
+### TG5-013: Add Light Theme CSS [DONE]
 
 **Priority:** MEDIUM
 **PRD Reference:** Section 4.1
@@ -371,7 +371,7 @@ Dragging items between vault sections shows a success alert, but the UI doesn't 
 
 ---
 
-### TG5-014: Light Mode Theme Selector UI
+### TG5-014: Light Mode Theme Selector UI [DONE]
 
 **Priority:** MEDIUM
 **PRD Reference:** Section 4.2
@@ -399,7 +399,7 @@ Currently, selecting Dark mode shows a palette picker; Light mode shows nothing.
 
 ## Phase 5: Remove Deprecated UI
 
-### TG5-015: Remove Edit Patterns from Live Tabs
+### TG5-015: Remove Edit Patterns from Live Tabs [DONE]
 
 **Priority:** LOW
 **PRD Reference:** Section 5.1
@@ -426,30 +426,30 @@ The Edit Patterns functionality exists on the Settings page. Having it on Live T
 
 ## Phase 6: Testing
 
-### TG5-016: Regression Testing
+### TG5-016: Regression Testing [DONE]
 
 **Priority:** HIGH
 
 **Goal:** Verify all existing functionality works after changes.
 
 **Test Cases:**
-- [ ] Home tab protection still works for "Vault All"
-- [ ] Adding home tabs creates correct patterns
-- [ ] Removing home tabs clears patterns
-- [ ] Manual tab close works for all tab types
-- [ ] History receives tabs that should be there
-- [ ] History does not receive vault matches or duplicates
-- [ ] History accordion works correctly
-- [ ] Vault group creation and deletion works
-- [ ] Vault item restore opens correct tabs
-- [ ] Vault item copy copies to clipboard
-- [ ] Vault group copy copies all URLs
-- [ ] Drag-and-drop between groups works
-- [ ] All 5 dark themes work
-- [ ] All 5 light themes work
-- [ ] Theme switching is smooth
-- [ ] Settings persist across reload
-- [ ] All icon buttons have accessible labels
+- [x] Home tab protection still works for "Vault All"
+- [x] Adding home tabs creates correct patterns
+- [x] Removing home tabs clears patterns
+- [x] Manual tab close works for all tab types
+- [x] History receives tabs that should be there
+- [x] History does not receive vault matches or duplicates
+- [x] History accordion works correctly
+- [x] Vault group creation and deletion works
+- [x] Vault item restore opens correct tabs
+- [x] Vault item copy copies to clipboard
+- [x] Vault group copy copies all URLs
+- [x] Drag-and-drop between groups works
+- [x] All 5 dark themes work
+- [x] All 5 light themes work
+- [x] Theme switching is smooth
+- [x] Settings persist across reload
+- [x] All icon buttons have accessible labels
 
 **Completion Promise:** All test cases pass. No regressions from v4.
 
