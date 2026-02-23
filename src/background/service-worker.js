@@ -1,16 +1,14 @@
 // Tab Goblin - Background Service Worker
 // Handles shutdown and restore operations
 
-importScripts('../common/storage.js', '../common/home-tabs.js');
+importScripts('../common/storage.js', '../common/home-tabs.js', '../common/url-utils.js', '../common/history.js');
+
+// Track tabs being closed by our extension (to distinguish from manual closes)
+const tabsBeingClosedByExtension = new Set();
 
 // Configure side panel to open on extension icon click
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error) => console.error('Error setting side panel behavior:', error));
-
-// Helper: Check if URL should be skipped (chrome:// or extension pages)
-function isSkippableUrl(url) {
-  return !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://');
-}
 
 // Helper: Extract tab data for storage
 function extractTabData(tab) {
@@ -21,13 +19,30 @@ function extractTabData(tab) {
   };
 }
 
-// Helper: Get domain from URL
-function getDomainFromUrl(url) {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return null;
+/**
+ * Navigate to the first tab in an array and focus its window
+ * @param {Object|null} tab - Chrome tab object (or null to skip)
+ */
+async function navigateToFirstTab(tab) {
+  if (!tab) return;
+  await chrome.tabs.update(tab.id, { active: true });
+  await chrome.windows.update(tab.windowId, { focused: true });
+}
+
+/**
+ * Open multiple tabs from URL list
+ * @param {Array} tabs - Array of tab objects with url property
+ * @returns {Promise<Object|null>} - First opened tab or null
+ */
+async function openTabs(tabs) {
+  let firstTab = null;
+  for (const tab of tabs) {
+    // Validate URL before opening (prevent javascript:, data:, file: injection)
+    if (!UrlUtils.isValidUrlForOpening(tab.url)) continue;
+    const newTab = await chrome.tabs.create({ url: tab.url, active: false });
+    if (!firstTab) firstTab = newTab;
   }
+  return firstTab;
 }
 
 // Handle extension install/update - preserve vault data
@@ -40,15 +55,103 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   }
 });
 
+// Cache of tab info for saving to history when manually closed
+const tabInfoCache = new Map();
+
+// Promise that resolves when cache is initialized
+let cacheInitPromise = null;
+
+// Initialize cache with all existing tabs (needed after service worker restart)
+async function initTabCache() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (tab.url && !UrlUtils.isSkippableUrl(tab.url)) {
+        tabInfoCache.set(tab.id, extractTabData(tab));
+      }
+    }
+  } catch (error) {
+    console.error('Error initializing tab cache:', error);
+  }
+}
+
+// Initialize cache on service worker startup
+cacheInitPromise = initTabCache();
+
+// Keep tab info cached so we can save it when tabs are closed
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (tab.url && !UrlUtils.isSkippableUrl(tab.url)) {
+    tabInfoCache.set(tabId, extractTabData(tab));
+  }
+});
+
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.url && !UrlUtils.isSkippableUrl(tab.url)) {
+    tabInfoCache.set(tab.id, extractTabData(tab));
+  }
+});
+
+// Listen for tabs being closed - auto-save non-home tabs to history
+chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
+  // Ensure cache is initialized before checking
+  if (cacheInitPromise) {
+    await cacheInitPromise;
+  }
+
+  const tabInfo = tabInfoCache.get(tabId);
+  tabInfoCache.delete(tabId);
+
+  // If closed by extension, don't save to history
+  if (tabsBeingClosedByExtension.has(tabId)) {
+    tabsBeingClosedByExtension.delete(tabId);
+    return;
+  }
+
+  // No cached info (might be a chrome:// tab or extension page)
+  if (!tabInfo || !tabInfo.url) {
+    return;
+  }
+
+  // Check if it's a home tab - home tabs don't go to history
+  const homePatterns = await HomeTabs.getHomePatterns();
+  if (HomeTabs.isHomeTabSync(tabInfo.url, homePatterns)) {
+    return;
+  }
+
+  // Check if this URL already exists in the vault - don't add to history
+  const vault = await VaultStorage.getVault();
+  const urlInVault = vault.groups.some(group =>
+    group.tabs.some(tab => tab.url === tabInfo.url)
+  );
+  if (urlInVault) {
+    return;
+  }
+
+  // Save to history
+  await TabHistory.addToHistory(tabInfo);
+});
+
+/**
+ * Close tabs while marking them as extension-closed (won't go to history)
+ * @param {number[]} tabIds - Chrome tab IDs to close
+ */
+async function closeTabsByExtension(tabIds) {
+  // Mark all tabs as being closed by extension
+  for (const tabId of tabIds) {
+    tabsBeingClosedByExtension.add(tabId);
+  }
+  await chrome.tabs.remove(tabIds);
+}
+
 // Get domains for shutdown by domain feature
 async function getDomainGroups() {
   const allTabs = await chrome.tabs.query({});
   const domainMap = new Map();
 
   for (const tab of allTabs) {
-    if (isSkippableUrl(tab.url)) continue;
+    if (UrlUtils.isSkippableUrl(tab.url)) continue;
 
-    const domain = getDomainFromUrl(tab.url);
+    const domain = UrlUtils.getDomainFromUrl(tab.url);
     if (!domain) continue;
 
     if (!domainMap.has(domain)) {
@@ -73,7 +176,7 @@ async function addTabsByDomain(tabs) {
 
   const domainMap = new Map();
   for (const tab of tabs) {
-    const domain = getDomainFromUrl(tab.url);
+    const domain = UrlUtils.getDomainFromUrl(tab.url);
     if (!domain) continue;
 
     if (!domainMap.has(domain)) {
@@ -110,7 +213,7 @@ async function shutdownTabsByDomain(tabIds) {
     }
 
     await addTabsByDomain(tabsToVault);
-    await chrome.tabs.remove(tabsToVault.map(t => t.id));
+    await closeTabsByExtension(tabsToVault.map(t => t.id));
 
     return { success: true, count: tabsToVault.length };
   } catch (error) {
@@ -135,14 +238,14 @@ async function shutdownCurrentTab() {
   try {
     const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    if (!activeTab || isSkippableUrl(activeTab.url)) return;
+    if (!activeTab || UrlUtils.isSkippableUrl(activeTab.url)) return;
 
     const homePatterns = await HomeTabs.getHomePatterns();
     if (HomeTabs.isHomeTabSync(activeTab.url, homePatterns)) return;
 
     const groupName = `Quick Vault - ${new Date().toLocaleDateString()}`;
     await VaultStorage.addGroup(groupName, [extractTabData(activeTab)]);
-    await chrome.tabs.remove(activeTab.id);
+    await closeTabsByExtension([activeTab.id]);
   } catch (error) {
     console.error('Error in shutdownCurrentTab:', error);
   }
@@ -192,8 +295,86 @@ async function handleMessage(message) {
     case 'find-open-tab-by-url':
       return await findOpenTabByUrl(message.url);
 
+    case 'close-to-history':
+      return await closeTabToHistory(message.tabId);
+
+    case 'get-history':
+      return { success: true, history: await TabHistory.getHistory() };
+
+    case 'restore-from-history':
+      return await restoreFromHistory(message.tabIds);
+
+    case 'remove-from-history':
+      return await removeFromHistoryHandler(message.tabIds);
+
+    case 'clear-history':
+      await TabHistory.clearHistory();
+      return { success: true };
+
     default:
       return { success: false, error: 'Unknown action' };
+  }
+}
+
+/**
+ * Close a tab and save it to history
+ * @param {number} tabId - Chrome tab ID
+ */
+async function closeTabToHistory(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab) {
+      return { success: false, error: 'Tab not found' };
+    }
+
+    // Save to history first
+    await TabHistory.addToHistory(extractTabData(tab));
+
+    // Close the tab (mark as extension-closed so onRemoved doesn't double-save)
+    await closeTabsByExtension([tabId]);
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error in closeTabToHistory:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Restore tabs from history (opens them and removes from history)
+ * @param {string[]} tabIds - History tab IDs to restore
+ */
+async function restoreFromHistory(tabIds) {
+  try {
+    const history = await TabHistory.getHistory();
+    const tabIdSet = new Set(tabIds);
+    const tabsToRestore = history.tabs.filter(t => tabIdSet.has(t.id));
+
+    const firstTab = await openTabs(tabsToRestore);
+
+    // Remove from history
+    await TabHistory.removeManyFromHistory(tabIds);
+
+    await navigateToFirstTab(firstTab);
+
+    return { success: true, count: tabsToRestore.length };
+  } catch (error) {
+    console.error('Error in restoreFromHistory:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Remove tabs from history without restoring
+ * @param {string[]} tabIds - History tab IDs to remove
+ */
+async function removeFromHistoryHandler(tabIds) {
+  try {
+    const count = await TabHistory.removeManyFromHistory(tabIds);
+    return { success: true, count };
+  } catch (error) {
+    console.error('Error in removeFromHistoryHandler:', error);
+    return { success: false, error: error.message };
   }
 }
 
@@ -221,30 +402,13 @@ async function navigateToTab(tabId) {
 async function findOpenTabByUrl(url) {
   try {
     const tabs = await chrome.tabs.query({});
-    const matchingTab = tabs.find(tab => normalizeUrl(tab.url) === normalizeUrl(url));
+    const matchingTab = tabs.find(tab => UrlUtils.normalizeUrl(tab.url) === UrlUtils.normalizeUrl(url));
     if (matchingTab) {
       return { success: true, tabId: matchingTab.id, windowId: matchingTab.windowId };
     }
     return { success: false, error: 'Tab not found' };
   } catch (error) {
     return { success: false, error: error.message };
-  }
-}
-
-/**
- * Normalize URL for comparison (remove trailing slashes, normalize protocol)
- * @param {string} url
- * @returns {string}
- */
-function normalizeUrl(url) {
-  if (!url) return '';
-  try {
-    const parsed = new URL(url);
-    // Remove trailing slash from pathname
-    let pathname = parsed.pathname.replace(/\/+$/, '');
-    return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}`;
-  } catch {
-    return url;
   }
 }
 
@@ -284,9 +448,8 @@ async function shutdownTabs(tabIds, groupName) {
       return { success: true, count: 0, message: 'All selected tabs are home tabs' };
     }
 
-    const safeName = (groupName || 'Vaulted Tabs').substring(0, 200);
-    await VaultStorage.addGroup(safeName, tabsToVault.map(extractTabData));
-    await chrome.tabs.remove(tabsToVault.map(t => t.id));
+    await VaultStorage.addGroup(groupName || 'Vaulted Tabs', tabsToVault.map(extractTabData));
+    await closeTabsByExtension(tabsToVault.map(t => t.id));
 
     return { success: true, count: tabsToVault.length };
   } catch (error) {
@@ -306,7 +469,7 @@ async function shutdownAll(groupName, autoGroupByDomain = false) {
 
     const homePatterns = await HomeTabs.getHomePatterns();
     const tabsToVault = allTabs.filter(tab => {
-      if (isSkippableUrl(tab.url)) return false;
+      if (UrlUtils.isSkippableUrl(tab.url)) return false;
       return !HomeTabs.isHomeTabSync(tab.url, homePatterns);
     });
 
@@ -321,7 +484,7 @@ async function shutdownAll(groupName, autoGroupByDomain = false) {
       await VaultStorage.addGroup(name, tabsToVault.map(extractTabData));
     }
 
-    await chrome.tabs.remove(tabsToVault.map(t => t.id));
+    await closeTabsByExtension(tabsToVault.map(t => t.id));
 
     return { success: true, count: tabsToVault.length };
   } catch (error) {
@@ -330,17 +493,6 @@ async function shutdownAll(groupName, autoGroupByDomain = false) {
   }
 }
 
-/**
- * Check if a tab's URL matches a domain
- * @param {string} tabUrl - Tab URL to check
- * @param {string} domain - Domain to match
- * @returns {boolean}
- */
-function tabMatchesDomain(tabUrl, domain) {
-  const hostname = getDomainFromUrl(tabUrl);
-  if (!hostname) return false;
-  return hostname === domain || hostname.endsWith('.' + domain);
-}
 
 /**
  * Shutdown all tabs matching a domain
@@ -353,7 +505,7 @@ async function shutdownByDomain(domain, groupName) {
 
     const homePatterns = await HomeTabs.getHomePatterns();
     const tabsToVault = allTabs.filter(tab => {
-      if (!tabMatchesDomain(tab.url, domain)) return false;
+      if (!UrlUtils.tabMatchesDomain(tab.url, domain)) return false;
       return !HomeTabs.isHomeTabSync(tab.url, homePatterns);
     });
 
@@ -362,7 +514,7 @@ async function shutdownByDomain(domain, groupName) {
     }
 
     await VaultStorage.addGroup(groupName || domain, tabsToVault.map(extractTabData));
-    await chrome.tabs.remove(tabsToVault.map(t => t.id));
+    await closeTabsByExtension(tabsToVault.map(t => t.id));
 
     return { success: true, count: tabsToVault.length };
   } catch (error) {
@@ -382,21 +534,9 @@ async function restoreGroup(groupId) {
       return { success: false, error: 'Group not found' };
     }
 
-    // Open all tabs, track the first one for navigation
-    let firstTab = null;
-    for (const tab of group.tabs) {
-      const newTab = await chrome.tabs.create({ url: tab.url, active: false });
-      if (!firstTab) firstTab = newTab;
-    }
-
-    // Remove group from vault
+    const firstTab = await openTabs(group.tabs);
     await VaultStorage.removeGroup(groupId);
-
-    // Navigate to the first restored tab
-    if (firstTab) {
-      await chrome.tabs.update(firstTab.id, { active: true });
-      await chrome.windows.update(firstTab.windowId, { focused: true });
-    }
+    await navigateToFirstTab(firstTab);
 
     return { success: true, count: group.tabs.length, navigatedTabId: firstTab?.id };
   } catch (error) {
@@ -417,24 +557,11 @@ async function restoreTabs(groupId, tabIds) {
       return { success: false, error: 'Group not found' };
     }
 
-    const tabIdSet = new Set(tabIds);
-    const tabsToRestore = group.tabs.filter(t => tabIdSet.has(t.id));
+    const tabsToRestore = group.tabs.filter(t => new Set(tabIds).has(t.id));
+    const firstTab = await openTabs(tabsToRestore);
 
-    // Open the tabs, track the first one for navigation
-    let firstTab = null;
-    for (const tab of tabsToRestore) {
-      const newTab = await chrome.tabs.create({ url: tab.url, active: false });
-      if (!firstTab) firstTab = newTab;
-    }
-
-    // Remove tabs from group
     await VaultStorage.removeTabsFromGroup(groupId, tabIds);
-
-    // Navigate to the first restored tab
-    if (firstTab) {
-      await chrome.tabs.update(firstTab.id, { active: true });
-      await chrome.windows.update(firstTab.windowId, { focused: true });
-    }
+    await navigateToFirstTab(firstTab);
 
     // Check if group is now empty and remove it
     const updatedGroup = await VaultStorage.getGroup(groupId);
@@ -452,49 +579,32 @@ async function restoreTabs(groupId, tabIds) {
 /**
  * Open tabs from a group WITHOUT removing from vault (duplicate)
  * @param {string} groupId
+ * @param {string[]} [tabIds] - Optional: specific tab IDs to duplicate (all if omitted)
  */
-async function duplicateGroup(groupId) {
+async function duplicateTabs(groupId, tabIds = null) {
   try {
     const group = await VaultStorage.getGroup(groupId);
     if (!group) {
       return { success: false, error: 'Group not found' };
     }
 
-    // Open all tabs without removing from vault
-    for (const tab of group.tabs) {
-      await chrome.tabs.create({ url: tab.url, active: false });
-    }
+    const tabsToDuplicate = tabIds
+      ? group.tabs.filter(t => new Set(tabIds).has(t.id))
+      : group.tabs;
 
-    return { success: true, count: group.tabs.length };
-  } catch (error) {
-    console.error('Error in duplicateGroup:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * Open specific tabs from a group WITHOUT removing from vault (duplicate)
- * @param {string} groupId
- * @param {string[]} tabIds - Vault tab IDs to duplicate
- */
-async function duplicateTabs(groupId, tabIds) {
-  try {
-    const group = await VaultStorage.getGroup(groupId);
-    if (!group) {
-      return { success: false, error: 'Group not found' };
-    }
-
-    const tabIdSet = new Set(tabIds);
-    const tabsToDuplicate = group.tabs.filter(t => tabIdSet.has(t.id));
-
-    // Open the tabs without removing
-    for (const tab of tabsToDuplicate) {
-      await chrome.tabs.create({ url: tab.url, active: false });
-    }
+    await openTabs(tabsToDuplicate);
 
     return { success: true, count: tabsToDuplicate.length };
   } catch (error) {
     console.error('Error in duplicateTabs:', error);
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * Open all tabs from a group WITHOUT removing from vault (duplicate)
+ * @param {string} groupId
+ */
+async function duplicateGroup(groupId) {
+  return duplicateTabs(groupId);
 }

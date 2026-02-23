@@ -7,8 +7,9 @@ const DEFAULT_SETTINGS = {
   skipShutdownAllConfirm: false,
   skipLargeRestoreConfirm: false,
   onboardingComplete: false,
-  themeMode: 'system',      // 'system' | 'light' | 'dark' | 'custom'
-  themePalette: 'slate-minimal'  // Theme key for dark/custom modes
+  themeMode: 'system',         // 'system' | 'light' | 'dark'
+  lightPalette: 'light',       // Theme key for light mode
+  darkPalette: 'slate-minimal' // Theme key for dark mode
 };
 
 /**

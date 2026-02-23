@@ -8,7 +8,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-**v3 In Progress** — Theme system, navigation, and bug fixes:
+**v5 In Progress** — Bug fixes and UI polish:
+- Fix home tab manual close and pattern cleanup on removal
+- Fix history behavior: duplicates, vault match prevention, collapsed default, bottom position
+- Vault UI: icon buttons for items/groups, fix copy behavior (clipboard), fix drag-drop refresh
+- Add 5 light mode theme palettes (matching dark themes)
+- Remove deprecated UI: Move Up/Down buttons, Edit Patterns from Live Tabs
+
+**v4 Complete** (archived):
+- Architecture refactor — popup archived, shared modules extracted
+- Single `isSkippableUrl()` in `url-utils.js`
+- CSS syntax errors fixed, universal transition rule replaced
+- ARIA attributes complete, custom dialogs replace native
+- Storage concurrency protection added
+
+**v3 Complete** (archived):
 - Bug fix: Live Tabs panel not displaying open tabs
 - Rebrand: "Tab Vault" to "Tab Goblin"
 - Remove emojis from UI
@@ -26,10 +40,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Key Documents
 
-- **PRD.md** — Full product requirements for v3
+- **PRD.md** — Full product requirements for v4
 - **TICKETS.md** — Implementation tickets (check for `[DONE]` status)
 - **PROMPT.md** — Ralph Loop instructions (ONLY used with `/ralph-loop` command)
-- **archive/** — Completed v1/v2 iteration documents
+- **context_items/opus-cursor-review.md** — Comprehensive code review (v3 baseline)
+- **archive/** — Completed v1/v2/v3 iteration documents
 - **documentation/** — User guide, developer guide, contributing guide
 
 ## Important: Ralph Loop Usage
@@ -53,17 +68,23 @@ For normal conversation and assistance, ignore PROMPT.md entirely.
 chrome_tab_shutdown/
 ├── manifest.json
 ├── src/
-│   ├── sidepanel/        # Side panel UI
+│   ├── sidepanel/        # Side panel UI (primary interface)
 │   │   ├── sidepanel.html
 │   │   ├── sidepanel.css  # Theme system here
 │   │   └── sidepanel.js
 │   ├── background/       # Service worker
+│   │   └── service-worker.js
 │   ├── common/           # Shared modules
-│   │   ├── storage.js    # Vault storage
-│   │   ├── home-tabs.js  # Home tab patterns
-│   │   ├── settings.js   # User settings
-│   │   └── themes.js     # Theme definitions (v3)
+│   │   ├── storage.js    # Vault storage with VaultStorage class
+│   │   ├── home-tabs.js  # Home tab patterns with HomeTabStorage
+│   │   ├── settings.js   # User settings with Settings class
+│   │   └── themes.js     # Theme definitions and Themes API
+│   ├── popup/            # DEPRECATED: Unreachable (no default_popup in manifest)
+│   │   ├── popup.html    # Archive candidate
+│   │   ├── popup.css     # Archive candidate
+│   │   └── popup.js      # Archive candidate (~75% duplicates sidepanel.js)
 │   └── assets/           # Icons
+├── context_items/        # Code reviews and context documents
 ├── documentation/        # User and developer docs
 ├── archive/              # Completed iteration documents
 ├── images_context_input/ # Reference images (palettes, screenshots)
@@ -154,9 +175,37 @@ chrome.tabs.onUpdated.addListener(callback);
 - **Async/await** — For all Chrome API calls
 - **Error handling** — Try/catch on async operations
 - **Input validation** — Validate message parameters and user input
-- **CSS variables** — All colors via custom properties (v3)
-- **No emojis** — Use text labels or Unicode symbols only (v3)
+- **CSS variables** — All colors via custom properties
+- **No emojis** — Use text labels or Unicode symbols only
 - **No console.log** — Remove debug statements before completion
+- **D.R.Y.** — Extract shared logic to `src/common/` modules
+- **Single source of truth** — One implementation per function across codebase
+
+## Known Issues (v5 Focus)
+
+See `TICKETS.md` for detailed bug tickets.
+
+**High:**
+- Home tab pattern not removed when home tab is removed from UI
+- Manual home tab close behavior inconsistent
+- Copy button opens tabs instead of copying to clipboard
+- Drag-and-drop shows success but UI doesn't update
+- History contains duplicates and restored tabs
+
+**Medium:**
+- History expanded by default (should be collapsed)
+- History position and accordion direction
+- Vault buttons use text instead of icons
+- Light mode has no theme palette options (dark has 5)
+
+**Low:**
+- Move Up/Down buttons add clutter (remove)
+- Edit Patterns link on Live Tabs redundant (remove)
+
+**Shared Modules (Created in v4):**
+- `src/common/ui-helpers.js` — pluralizeTabs, clearContainer, showToast, setLoading
+- `src/common/url-utils.js` — isSkippableUrl, getDomainFromUrl, normalizeUrl
+- `src/common/history.js` — History storage operations
 
 ## Context7 Usage
 
