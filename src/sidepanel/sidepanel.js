@@ -19,50 +19,68 @@ let currentSearchQuery = '';
 // Current active tab
 let currentTab = 'live';
 
-// Helper: Pluralize 'tab' based on count
-function pluralizeTabs(count) {
-  return `tab${count !== 1 ? 's' : ''}`;
+// Helper aliases for commonly used UIHelpers functions
+const pluralizeTabs = UIHelpers.pluralizeTabs.bind(UIHelpers);
+const clearContainer = UIHelpers.clearContainer.bind(UIHelpers);
+const showToast = UIHelpers.showToast.bind(UIHelpers);
+const setLoading = UIHelpers.setLoading.bind(UIHelpers);
+const getDefaultFavicon = UIHelpers.getDefaultFavicon.bind(UIHelpers);
+const truncateUrl = UIHelpers.truncateUrl.bind(UIHelpers);
+
+// Check if a tab matches a search query (by title or URL)
+function matchesSearch(tab, query) {
+  if (!query) return true;
+  const titleMatch = (tab.title || '').toLowerCase().includes(query);
+  const urlMatch = (tab.url || '').toLowerCase().includes(query);
+  return titleMatch || urlMatch;
 }
 
-// Helper: Clear all children from a container
-function clearContainer(container) {
-  while (container.firstChild) {
-    container.removeChild(container.firstChild);
+// Refresh the live tabs panel with tab count and selection state
+async function refreshLivePanel() {
+  await updateLiveTabCount();
+  await renderLiveTabsPanel();
+  updateSelectedCount();
+}
+
+// Create a favicon element with error fallback
+function createFavicon(faviconUrl) {
+  const favicon = document.createElement('img');
+  favicon.className = 'tab-favicon';
+  favicon.src = faviconUrl || getDefaultFavicon();
+  favicon.alt = '';
+  favicon.onerror = () => {
+    favicon.src = getDefaultFavicon();
+  };
+  return favicon;
+}
+
+// Create tab info element (title and URL) with optional active badge
+function createTabInfo(title, url, isActive = false) {
+  const info = document.createElement('div');
+  info.className = 'tab-info';
+
+  const titleRow = document.createElement('div');
+  titleRow.className = 'tab-title-row';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'tab-title';
+  titleEl.textContent = title || 'Untitled';
+  titleRow.appendChild(titleEl);
+
+  if (isActive) {
+    const activeBadge = document.createElement('span');
+    activeBadge.className = 'active-badge';
+    activeBadge.textContent = 'Active';
+    titleRow.appendChild(activeBadge);
   }
-}
 
-// Helper: Check if URL should be skipped (chrome:// or extension pages)
-// Returns true only for chrome:// and extension pages, NOT for undefined URLs
-function isSkippableUrl(url) {
-  if (!url) return false; // Don't skip tabs with undefined URL - they're valid tabs
-  return url.startsWith('chrome://') || url.startsWith('chrome-extension://');
-}
+  const urlEl = document.createElement('div');
+  urlEl.className = 'tab-url';
+  urlEl.textContent = truncateUrl(url);
 
-// Toast notification helper
-function showToast(message, type = 'info') {
-  const container = document.getElementById('toastContainer');
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-
-  const text = document.createElement('span');
-  text.textContent = message;
-
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'toast-close';
-  closeBtn.textContent = '\u00D7';
-  closeBtn.addEventListener('click', () => toast.remove());
-
-  toast.appendChild(text);
-  toast.appendChild(closeBtn);
-  container.appendChild(toast);
-
-  setTimeout(() => toast.remove(), 3000);
-}
-
-// Set loading state on button
-function setLoading(btn, loading) {
-  btn.classList.toggle('loading', loading);
-  btn.disabled = loading;
+  info.appendChild(titleRow);
+  info.appendChild(urlEl);
+  return info;
 }
 
 async function init() {
@@ -82,13 +100,17 @@ function setupTabListeners() {
   const handleTabChange = async () => {
     await updateOpenTabsCache();
     await updateLiveTabCount();
-    // Re-render vault if on vault tab to update active indicators
+    // Re-render current panel to reflect tab changes
     if (currentTab === 'vault') {
+      await renderHistorySection();
       if (currentSearchQuery) {
         await renderSearchResults();
       } else {
         await renderVaultGroups();
       }
+    } else if (currentTab === 'live') {
+      await renderLiveTabsPanel();
+      updateSelectedCount();
     }
   };
 
@@ -106,9 +128,10 @@ function setupTabListeners() {
 async function initTheme() {
   try {
     const themeMode = await Settings.getSetting('themeMode');
-    const themePalette = await Settings.getSetting('themePalette');
+    const lightPalette = await Settings.getSetting('lightPalette');
+    const darkPalette = await Settings.getSetting('darkPalette');
 
-    applyThemeFromSettings(themeMode, themePalette);
+    applyThemeFromSettings(themeMode, lightPalette, darkPalette);
 
     // Listen for system preference changes
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', handleSystemThemeChange);
@@ -119,14 +142,14 @@ async function initTheme() {
 }
 
 // Apply theme based on mode and palette settings
-function applyThemeFromSettings(themeMode, themePalette) {
+function applyThemeFromSettings(themeMode, lightPalette, darkPalette) {
   switch (themeMode) {
     case 'light':
-      Themes.applyTheme('light');
+      Themes.applyTheme(lightPalette || 'light');
       break;
     case 'dark':
     case 'custom':
-      Themes.applyTheme(themePalette || 'slate-minimal');
+      Themes.applyTheme(darkPalette || 'slate-minimal');
       break;
     case 'system':
     default:
@@ -149,58 +172,75 @@ async function handleThemeModeChange(e) {
   const mode = e.target.value;
   await Settings.updateSetting('themeMode', mode);
 
-  const paletteSelector = document.getElementById('darkPaletteSelector');
+  const lightPaletteSelector = document.getElementById('lightPaletteSelector');
+  const darkPaletteSelector = document.getElementById('darkPaletteSelector');
+
+  // Hide both selectors first
+  lightPaletteSelector.classList.add('hidden');
+  darkPaletteSelector.classList.add('hidden');
 
   if (mode === 'dark') {
-    // Show palette selector for dark mode
-    paletteSelector.classList.remove('hidden');
-    const currentPalette = await Settings.getSetting('themePalette') || 'slate-minimal';
+    // Show dark palette selector
+    darkPaletteSelector.classList.remove('hidden');
+    const currentPalette = await Settings.getSetting('darkPalette') || 'slate-minimal';
+    Themes.applyTheme(currentPalette);
+  } else if (mode === 'light') {
+    // Show light palette selector
+    lightPaletteSelector.classList.remove('hidden');
+    const currentPalette = await Settings.getSetting('lightPalette') || 'light';
     Themes.applyTheme(currentPalette);
   } else {
-    // Hide palette selector
-    paletteSelector.classList.add('hidden');
-
-    if (mode === 'light') {
-      Themes.applyTheme('light');
-    } else {
-      // System mode
-      Themes.applyTheme(null);
-    }
+    // System mode
+    Themes.applyTheme(null);
   }
 }
 
 // Handle palette button click
-async function handlePaletteChange(palette) {
-  // Update active state
-  document.querySelectorAll('.palette-btn').forEach(btn => {
+async function handlePaletteChange(palette, paletteType) {
+  // Determine which selector contains this palette
+  const selectorId = paletteType === 'light' ? 'lightPaletteSelector' : 'darkPaletteSelector';
+  const settingKey = paletteType === 'light' ? 'lightPalette' : 'darkPalette';
+
+  // Update active state within that selector only
+  const selector = document.getElementById(selectorId);
+  selector.querySelectorAll('.palette-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.palette === palette);
   });
 
   // Save and apply
-  await Settings.updateSetting('themePalette', palette);
+  await Settings.updateSetting(settingKey, palette);
   Themes.applyTheme(palette);
 }
 
 // Initialize theme selector UI from settings
 async function initThemeSelector() {
   const themeMode = await Settings.getSetting('themeMode') || 'system';
-  const themePalette = await Settings.getSetting('themePalette') || 'slate-minimal';
+  const lightPalette = await Settings.getSetting('lightPalette') || 'light';
+  const darkPalette = await Settings.getSetting('darkPalette') || 'slate-minimal';
 
   // Set radio button
   const radio = document.querySelector(`input[name="themeMode"][value="${themeMode}"]`);
   if (radio) radio.checked = true;
 
-  // Show/hide palette selector
-  const paletteSelector = document.getElementById('darkPaletteSelector');
+  // Show/hide palette selectors
+  const lightPaletteSelector = document.getElementById('lightPaletteSelector');
+  const darkPaletteSelector = document.getElementById('darkPaletteSelector');
+
+  lightPaletteSelector.classList.add('hidden');
+  darkPaletteSelector.classList.add('hidden');
+
   if (themeMode === 'dark') {
-    paletteSelector.classList.remove('hidden');
-  } else {
-    paletteSelector.classList.add('hidden');
+    darkPaletteSelector.classList.remove('hidden');
+  } else if (themeMode === 'light') {
+    lightPaletteSelector.classList.remove('hidden');
   }
 
-  // Set active palette
-  document.querySelectorAll('.palette-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.palette === themePalette);
+  // Set active palettes
+  lightPaletteSelector.querySelectorAll('.palette-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.palette === lightPalette);
+  });
+  darkPaletteSelector.querySelectorAll('.palette-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.palette === darkPalette);
   });
 }
 
@@ -219,20 +259,8 @@ async function updateOpenTabsCache() {
 // Check if a URL matches any open tab and return the tab if found
 function findOpenTabByUrl(url) {
   if (!url || !openTabsCache.length) return null;
-  const normalizedUrl = normalizeUrlForComparison(url);
-  return openTabsCache.find(tab => normalizeUrlForComparison(tab.url) === normalizedUrl);
-}
-
-// Normalize URL for comparison (remove trailing slashes, handle variations)
-function normalizeUrlForComparison(url) {
-  if (!url) return '';
-  try {
-    const parsed = new URL(url);
-    let pathname = parsed.pathname.replace(/\/+$/, '');
-    return `${parsed.protocol}//${parsed.host}${pathname}${parsed.search}`;
-  } catch {
-    return url;
-  }
+  const normalizedUrl = UrlUtils.normalizeUrl(url);
+  return openTabsCache.find(tab => UrlUtils.normalizeUrl(tab.url) === normalizedUrl);
 }
 
 // Navigate to a specific tab
@@ -328,6 +356,7 @@ function updateSearchUI(tabName) {
 async function renderCurrentPanel() {
   switch (currentTab) {
     case 'vault':
+      await renderHistorySection();
       await renderVaultGroups();
       break;
     case 'live':
@@ -348,36 +377,41 @@ async function renderLiveTabsPanel() {
   const homePatterns = await HomeTabs.getHomePatterns();
   const searchQuery = currentSearchQuery.toLowerCase();
 
-  // Separate home tabs from regular tabs
-  const homeTabs = [];
+  // Build a map of open tabs by URL for quick lookup
+  const openTabsByUrl = new Map();
   const regularTabs = [];
 
   for (const tab of tabs) {
-    if (isSkippableUrl(tab.url)) continue;
-
-    // Filter by search query if present
-    if (searchQuery) {
-      const titleMatch = (tab.title || '').toLowerCase().includes(searchQuery);
-      const urlMatch = (tab.url || '').toLowerCase().includes(searchQuery);
-      if (!titleMatch && !urlMatch) continue;
-    }
+    if (UrlUtils.isSkippableUrl(tab.url)) continue;
 
     if (HomeTabs.isHomeTabSync(tab.url, homePatterns)) {
-      homeTabs.push(tab);
-    } else {
+      // Track this as a home tab instance (stores in chrome.storage)
+      await HomeTabs.trackHomeInstance({
+        url: tab.url,
+        title: tab.title,
+        favIconUrl: tab.favIconUrl
+      });
+      openTabsByUrl.set(tab.url, tab);
+    } else if (matchesSearch(tab, searchQuery)) {
       regularTabs.push(tab);
     }
   }
 
-  // Render home tabs section
-  renderHomeTabsSection(homeTabs, homePatterns);
+  // Get all saved home tab instances (includes closed tabs) and filter by search
+  const homeInstances = await HomeTabs.getHomeInstances();
+  const filteredInstances = homeInstances.filter(instance => matchesSearch(instance, searchQuery));
+
+  // Render home tabs section with instances and open tab info
+  renderHomeTabsSection(filteredInstances, openTabsByUrl, homePatterns);
 
   // Render regular tabs
   renderOpenTabsList(regularTabs);
 }
 
 // Render the Home Tabs section
-function renderHomeTabsSection(homeTabs, homePatterns) {
+// instances: saved home tab instances (may be open or closed)
+// openTabsByUrl: Map of URL -> open tab object
+function renderHomeTabsSection(instances, openTabsByUrl, homePatterns) {
   const section = document.getElementById('homeTabsSection');
   const header = document.getElementById('homeTabsHeader');
   const container = document.getElementById('homeTabsList');
@@ -393,48 +427,58 @@ function renderHomeTabsSection(homeTabs, homePatterns) {
   }
 
   clearContainer(container);
-  countEl.textContent = homeTabs.length;
+  countEl.textContent = instances.length;
 
-  if (homeTabs.length === 0) {
+  if (instances.length === 0) {
     const emptyState = document.createElement('div');
     emptyState.className = 'home-tabs-empty';
-    emptyState.textContent = 'No protected tabs open';
+    emptyState.textContent = 'No protected tabs';
     container.appendChild(emptyState);
     return;
   }
 
-  for (const tab of homeTabs) {
-    container.appendChild(createHomeTabItem(tab, homePatterns));
+  // Sort instances: open tabs first, then by lastSeen
+  const sortedInstances = [...instances].sort((a, b) => {
+    const aOpen = openTabsByUrl.has(a.url);
+    const bOpen = openTabsByUrl.has(b.url);
+    if (aOpen && !bOpen) return -1;
+    if (!aOpen && bOpen) return 1;
+    return b.lastSeen - a.lastSeen;
+  });
+
+  for (const instance of sortedInstances) {
+    const openTab = openTabsByUrl.get(instance.url);
+    container.appendChild(createHomeTabItem(instance, openTab, homePatterns));
   }
 }
 
 // Create a home tab item
-function createHomeTabItem(tab, homePatterns) {
+// instance: saved home tab instance data
+// openTab: the open chrome tab (if currently open) or null
+function createHomeTabItem(instance, openTab, homePatterns) {
+  const isOpen = !!openTab;
+
   const item = document.createElement('div');
-  item.className = 'home-tab-item';
-  item.dataset.tabId = tab.id;
+  item.className = 'home-tab-item' + (isOpen ? ' active' : ' closed');
+  item.dataset.url = instance.url;
+  if (openTab) {
+    item.dataset.tabId = openTab.id;
+  }
 
-  const favicon = document.createElement('img');
-  favicon.className = 'tab-favicon';
-  favicon.src = tab.favIconUrl || getDefaultFavicon();
-  favicon.alt = '';
-  favicon.onerror = () => {
-    favicon.src = getDefaultFavicon();
-  };
+  // Use openTab data if available (more current), fallback to instance
+  const favicon = createFavicon(openTab?.favIconUrl || instance.favIconUrl);
+  const info = createTabInfo(openTab?.title || instance.title, instance.url);
 
-  const info = document.createElement('div');
-  info.className = 'tab-info';
-
-  const title = document.createElement('div');
-  title.className = 'tab-title';
-  title.textContent = tab.title || 'Untitled';
-
-  const url = document.createElement('div');
-  url.className = 'tab-url';
-  url.textContent = truncateUrl(tab.url);
-
-  info.appendChild(title);
-  info.appendChild(url);
+  // Status indicator
+  const status = document.createElement('span');
+  status.className = 'home-tab-status';
+  if (isOpen) {
+    status.textContent = 'Active';
+    status.classList.add('status-active');
+  } else {
+    status.textContent = 'Closed';
+    status.classList.add('status-closed');
+  }
 
   const unprotectBtn = document.createElement('button');
   unprotectBtn.className = 'unprotect-btn';
@@ -443,17 +487,38 @@ function createHomeTabItem(tab, homePatterns) {
   unprotectBtn.setAttribute('aria-label', 'Remove from Home Tabs');
   unprotectBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    await removeTabFromHome(tab.url, homePatterns);
+    const currentPatterns = await HomeTabs.getHomePatterns();
+    await removeTabFromHome(instance.url, currentPatterns);
+    // Also remove the instance
+    await HomeTabs.removeHomeInstance(instance.url);
   });
 
   item.appendChild(favicon);
   item.appendChild(info);
+  item.appendChild(status);
   item.appendChild(unprotectBtn);
 
-  // Click on row navigates to tab (except on buttons)
+  // Click on row: navigate if open, open if closed
   item.addEventListener('click', async (e) => {
     if (e.target.closest('button')) return;
-    await navigateToTab(tab.id);
+
+    if (isOpen && openTab) {
+      // Tab is open - navigate to it
+      await navigateToTab(openTab.id);
+    } else {
+      // Tab is closed - open it
+      const newTab = await chrome.tabs.create({ url: instance.url, active: true });
+      // Track the new tab as an instance
+      await HomeTabs.trackHomeInstance({
+        url: instance.url,
+        title: instance.title,
+        favIconUrl: instance.favIconUrl
+      });
+      // Navigate to the new tab
+      await chrome.windows.update(newTab.windowId, { focused: true });
+      // Re-render to show updated state
+      await renderLiveTabsPanel();
+    }
   });
 
   return item;
@@ -461,17 +526,22 @@ function createHomeTabItem(tab, homePatterns) {
 
 // Remove a tab from home protection
 async function removeTabFromHome(tabUrl, patterns) {
-  // Find matching pattern(s) for this URL
-  const matchingPattern = patterns.find(pattern => {
-    try {
-      return HomeTabs.patternToRegex(pattern).test(tabUrl);
-    } catch {
-      return false;
-    }
-  });
+  // Find pattern to remove: exact URL match first, then regex match
+  let patternToRemove = patterns.includes(tabUrl) ? tabUrl : null;
 
-  if (matchingPattern) {
-    await HomeTabs.removeHomePattern(matchingPattern);
+  if (!patternToRemove) {
+    patternToRemove = patterns.find(pattern => {
+      try {
+        return HomeTabs.patternToRegex(pattern).test(tabUrl);
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  if (patternToRemove) {
+    await HomeTabs.removeHomePattern(patternToRemove);
+    await HomeTabs.cleanupOrphanedInstances();
     showToast('Tab unprotected', 'success');
     await renderLiveTabsPanel();
     updateSelectedCount();
@@ -496,7 +566,7 @@ function renderOpenTabsList(tabs) {
   }
 
   // Group tabs by domain
-  const domainGroups = groupTabsByDomain(tabs);
+  const domainGroups = UrlUtils.groupTabsByDomain(tabs);
 
   // Sort domains by tab count (descending)
   const sortedDomains = Object.keys(domainGroups).sort((a, b) =>
@@ -507,31 +577,6 @@ function renderOpenTabsList(tabs) {
   for (const domain of sortedDomains) {
     const domainTabs = domainGroups[domain];
     container.appendChild(createDomainGroupCard(domain, domainTabs));
-
-    // Add all tabs to selected by default
-    domainTabs.forEach(tab => selectedTabIds.add(tab.id));
-  }
-}
-
-// Group tabs by domain
-function groupTabsByDomain(tabs) {
-  const groups = {};
-  for (const tab of tabs) {
-    const domain = getDomainFromUrl(tab.url) || 'Other';
-    if (!groups[domain]) {
-      groups[domain] = [];
-    }
-    groups[domain].push(tab);
-  }
-  return groups;
-}
-
-// Get domain from URL
-function getDomainFromUrl(url) {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return null;
   }
 }
 
@@ -541,23 +586,29 @@ function createDomainGroupCard(domain, tabs) {
   card.className = 'domain-group-card';
   card.dataset.domain = domain;
 
-  // Restore expanded state if previously expanded
-  if (expandedDomainGroups.has(domain)) {
+  // Restore expanded state if previously expanded OR if searching (to show matching results)
+  const shouldExpand = expandedDomainGroups.has(domain) || currentSearchQuery;
+  if (shouldExpand) {
     card.classList.add('expanded');
   }
 
-  // Group header
+  // Group header (acts as button for accordion)
   const header = document.createElement('div');
   header.className = 'domain-group-header';
+  header.setAttribute('role', 'button');
+  header.setAttribute('tabindex', '0');
+  header.setAttribute('aria-expanded', shouldExpand ? 'true' : 'false');
+  header.setAttribute('aria-label', `${domain}, ${tabs.length} ${pluralizeTabs(tabs.length)}`);
 
   const expand = document.createElement('span');
   expand.className = 'domain-group-expand';
   expand.textContent = '\u25B6'; // Right triangle
+  expand.setAttribute('aria-hidden', 'true');
 
   const groupCheckbox = document.createElement('input');
   groupCheckbox.type = 'checkbox';
   groupCheckbox.className = 'domain-group-checkbox';
-  groupCheckbox.checked = true;
+  groupCheckbox.checked = false;
   groupCheckbox.title = 'Select all tabs in this domain';
   groupCheckbox.addEventListener('click', (e) => e.stopPropagation());
   groupCheckbox.addEventListener('change', (e) => {
@@ -602,14 +653,24 @@ function createDomainGroupCard(domain, tabs) {
   header.appendChild(info);
   header.appendChild(actions);
 
-  header.addEventListener('click', (e) => {
+  const toggleExpand = (e) => {
     if (e.target.closest('.domain-group-actions') || e.target.closest('.domain-group-checkbox')) return;
     card.classList.toggle('expanded');
+    const isExpanded = card.classList.contains('expanded');
+    header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
     // Track expanded state
-    if (card.classList.contains('expanded')) {
+    if (isExpanded) {
       expandedDomainGroups.add(domain);
     } else {
       expandedDomainGroups.delete(domain);
+    }
+  };
+
+  header.addEventListener('click', toggleExpand);
+  header.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleExpand(e);
     }
   });
 
@@ -637,7 +698,7 @@ function createDomainTabItem(tab, groupCard) {
   const checkbox = document.createElement('input');
   checkbox.type = 'checkbox';
   checkbox.className = 'domain-tab-checkbox';
-  checkbox.checked = true;
+  checkbox.checked = false;
 
   checkbox.addEventListener('change', () => {
     if (checkbox.checked) {
@@ -649,27 +710,8 @@ function createDomainTabItem(tab, groupCard) {
     updateDomainGroupCheckbox(groupCard);
   });
 
-  const favicon = document.createElement('img');
-  favicon.className = 'tab-favicon';
-  favicon.src = tab.favIconUrl || getDefaultFavicon();
-  favicon.alt = '';
-  favicon.onerror = () => {
-    favicon.src = getDefaultFavicon();
-  };
-
-  const info = document.createElement('div');
-  info.className = 'tab-info';
-
-  const title = document.createElement('div');
-  title.className = 'tab-title';
-  title.textContent = tab.title || 'Untitled';
-
-  const url = document.createElement('div');
-  url.className = 'tab-url';
-  url.textContent = truncateUrl(tab.url);
-
-  info.appendChild(title);
-  info.appendChild(url);
+  const favicon = createFavicon(tab.favIconUrl);
+  const info = createTabInfo(tab.title, tab.url);
 
   // Action buttons container
   const actions = document.createElement('div');
@@ -686,15 +728,15 @@ function createDomainTabItem(tab, groupCard) {
     await vaultSingleTab(tab);
   });
 
-  // Close button - close tab without vaulting
+  // Close button - close tab to history
   const closeBtn = document.createElement('button');
   closeBtn.className = 'tab-action-btn close-btn';
   closeBtn.textContent = '\u{2715}'; // X mark
-  closeBtn.title = 'Close tab without vaulting';
-  closeBtn.setAttribute('aria-label', 'Close tab');
+  closeBtn.title = 'Close tab to history';
+  closeBtn.setAttribute('aria-label', 'Close tab to history');
   closeBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    await closeSingleTab(tab.id);
+    await closeTabToHistory(tab.id);
   });
 
   // Protect button - add to home tabs
@@ -705,7 +747,18 @@ function createDomainTabItem(tab, groupCard) {
   protectBtn.setAttribute('aria-label', 'Add to Home Tabs');
   protectBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    await addTabToHome(tab.url);
+    // Re-fetch the tab's current URL to ensure we're using the latest
+    try {
+      const currentTab = await chrome.tabs.get(tab.id);
+      if (currentTab && currentTab.url) {
+        await addTabToHome(currentTab.url);
+      } else {
+        showToast('Error: Tab no longer exists', 'error');
+      }
+    } catch (err) {
+      // Tab may have been closed
+      showToast('Error: Tab no longer exists', 'error');
+    }
   });
 
   actions.appendChild(vaultBtn);
@@ -755,9 +808,7 @@ async function vaultDomainTabs(domain, tabs) {
 
   if (response.success) {
     showToast(`Vaulted ${response.count} ${pluralizeTabs(response.count)} from ${domain}`, 'success');
-    await updateLiveTabCount();
-    await renderLiveTabsPanel();
-    updateSelectedCount();
+    await refreshLivePanel();
   } else {
     showToast('Error: ' + (response.error || 'Unknown error'), 'error');
   }
@@ -765,15 +816,42 @@ async function vaultDomainTabs(domain, tabs) {
 
 // Add a tab to home protection
 async function addTabToHome(tabUrl) {
-  await HomeTabs.addHomePattern(tabUrl);
-  showToast('Added to Home Tabs', 'success');
+  if (!tabUrl) {
+    showToast('Error: Invalid tab URL', 'error');
+    return;
+  }
+
+  const result = await HomeTabs.addHomePattern(tabUrl);
+  if (result.error) {
+    showToast(result.error, 'error');
+    return;
+  }
+
+  // Verify the pattern was saved
+  const savedPatterns = await HomeTabs.getHomePatterns();
+  if (!savedPatterns.includes(tabUrl)) {
+    showToast('Error: Failed to save pattern', 'error');
+    return;
+  }
+
+  showToast(result.added ? 'Added to Home Tabs' : 'Tab already protected', result.added ? 'success' : 'info');
+
+  // Clear search query to ensure the protected tab is visible
+  if (currentSearchQuery) {
+    currentSearchQuery = '';
+    document.getElementById('globalSearchInput').value = '';
+  }
+
+  // Expand home tabs section so the user can see the protected tab
+  homeTabsCollapsed = false;
+
   await renderLiveTabsPanel();
   updateSelectedCount();
 }
 
 // Vault a single tab (save to vault and close)
 async function vaultSingleTab(tab) {
-  const domain = getDomainFromUrl(tab.url) || 'Other';
+  const domain = UrlUtils.getDomainFromUrl(tab.url) || 'Other';
   const response = await chrome.runtime.sendMessage({
     action: 'shutdown-tabs',
     tabIds: [tab.id],
@@ -782,22 +860,26 @@ async function vaultSingleTab(tab) {
 
   if (response.success) {
     showToast('Tab vaulted', 'success');
-    await updateLiveTabCount();
-    await renderLiveTabsPanel();
-    updateSelectedCount();
+    await refreshLivePanel();
   } else {
     showToast('Error: ' + (response.error || 'Unknown error'), 'error');
   }
 }
 
-// Close a single tab without vaulting
-async function closeSingleTab(tabId) {
+// Close a single tab and save to history
+async function closeTabToHistory(tabId) {
   try {
-    await chrome.tabs.remove(tabId);
-    showToast('Tab closed', 'info');
-    await updateLiveTabCount();
-    await renderLiveTabsPanel();
-    updateSelectedCount();
+    const response = await chrome.runtime.sendMessage({
+      action: 'close-to-history',
+      tabId: tabId
+    });
+
+    if (response.success) {
+      showToast('Tab closed to history', 'info');
+      await refreshLivePanel();
+    } else {
+      showToast('Error: ' + (response.error || 'Unknown error'), 'error');
+    }
   } catch (error) {
     showToast('Error closing tab', 'error');
   }
@@ -867,6 +949,201 @@ async function renderVaultGroups() {
   });
 }
 
+// Track collapsed state for history section (collapsed by default)
+let historyCollapsed = true;
+
+// Render the history section in the vault panel
+async function renderHistorySection() {
+  const section = document.getElementById('historySection');
+  const header = document.getElementById('historyHeader');
+  const container = document.getElementById('historyList');
+  const countEl = document.getElementById('historyCount');
+  const emptyEl = document.getElementById('historyEmpty');
+  const footerEl = document.getElementById('historyFooter');
+
+  // Restore collapsed state
+  if (historyCollapsed) {
+    section.classList.add('collapsed');
+    header.setAttribute('aria-expanded', 'false');
+  } else {
+    section.classList.remove('collapsed');
+    header.setAttribute('aria-expanded', 'true');
+  }
+
+  // Set up header click handler (only once)
+  if (!header.dataset.initialized) {
+    header.dataset.initialized = 'true';
+    header.addEventListener('click', () => {
+      historyCollapsed = !historyCollapsed;
+      section.classList.toggle('collapsed');
+      header.setAttribute('aria-expanded', !historyCollapsed);
+    });
+  }
+
+  // Get history from service worker
+  const response = await chrome.runtime.sendMessage({ action: 'get-history' });
+  const history = response.success ? response.history : { tabs: [] };
+
+  clearContainer(container);
+  countEl.textContent = history.tabs.length;
+
+  if (history.tabs.length === 0) {
+    emptyEl.classList.remove('hidden');
+    footerEl.classList.add('hidden');
+    section.classList.add('empty');
+    return;
+  }
+
+  emptyEl.classList.add('hidden');
+  footerEl.classList.remove('hidden');
+  section.classList.remove('empty');
+
+  // Render history items
+  for (const tab of history.tabs) {
+    container.appendChild(createHistoryItem(tab));
+  }
+
+  // Set up clear history button (only once)
+  const clearBtn = document.getElementById('clearHistoryBtn');
+  if (!clearBtn.dataset.initialized) {
+    clearBtn.dataset.initialized = 'true';
+    clearBtn.addEventListener('click', async () => {
+      await chrome.runtime.sendMessage({ action: 'clear-history' });
+      showToast('History cleared', 'success');
+      await renderHistorySection();
+    });
+  }
+}
+
+// Create a history item element
+function createHistoryItem(tab) {
+  const item = document.createElement('div');
+  item.className = 'history-item';
+  item.dataset.tabId = tab.id;
+
+  const favicon = createFavicon(tab.favIconUrl);
+  const info = createTabInfo(tab.title, tab.url);
+
+  const timeEl = document.createElement('div');
+  timeEl.className = 'history-time';
+  timeEl.textContent = TabHistory.getTimeRemaining(tab);
+
+  const actions = document.createElement('div');
+  actions.className = 'history-item-actions';
+
+  // Restore button
+  const restoreBtn = document.createElement('button');
+  restoreBtn.className = 'tab-action-btn restore-btn';
+  restoreBtn.textContent = '\u21B3'; // Arrow
+  restoreBtn.title = 'Restore tab';
+  restoreBtn.setAttribute('aria-label', 'Restore tab');
+  restoreBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await restoreFromHistory([tab.id]);
+  });
+
+  // Vault button - add to vault without opening
+  const vaultBtn = document.createElement('button');
+  vaultBtn.className = 'tab-action-btn vault-btn';
+  vaultBtn.textContent = '\u2913'; // Downwards arrow to bar (vault/archive symbol)
+  vaultBtn.title = 'Add to vault';
+  vaultBtn.setAttribute('aria-label', 'Add to vault');
+  vaultBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await vaultFromHistory(tab);
+  });
+
+  // Remove button
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'tab-action-btn close-btn';
+  removeBtn.textContent = '\u{2715}'; // X mark
+  removeBtn.title = 'Remove from history';
+  removeBtn.setAttribute('aria-label', 'Remove from history');
+  removeBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await removeFromHistory([tab.id]);
+  });
+
+  actions.appendChild(timeEl);
+  actions.appendChild(restoreBtn);
+  actions.appendChild(vaultBtn);
+  actions.appendChild(removeBtn);
+
+  item.appendChild(favicon);
+  item.appendChild(info);
+  item.appendChild(actions);
+
+  // Click on row restores the tab
+  item.addEventListener('click', async () => {
+    await restoreFromHistory([tab.id]);
+  });
+
+  return item;
+}
+
+// Restore tabs from history
+async function restoreFromHistory(tabIds) {
+  const response = await chrome.runtime.sendMessage({
+    action: 'restore-from-history',
+    tabIds: tabIds
+  });
+
+  if (response.success) {
+    showToast(`Restored ${response.count} ${pluralizeTabs(response.count)}`, 'success');
+    await renderHistorySection();
+  } else {
+    showToast('Error: ' + (response.error || 'Unknown error'), 'error');
+  }
+}
+
+// Remove tabs from history without restoring
+async function removeFromHistory(tabIds) {
+  const response = await chrome.runtime.sendMessage({
+    action: 'remove-from-history',
+    tabIds: tabIds
+  });
+
+  if (response.success) {
+    showToast('Removed from history', 'info');
+    await renderHistorySection();
+  } else {
+    showToast('Error: ' + (response.error || 'Unknown error'), 'error');
+  }
+}
+
+// Vault a tab from history (add to vault without opening)
+async function vaultFromHistory(tab) {
+  // Create a new vault group with today's date
+  const groupName = `From History - ${new Date().toLocaleDateString()}`;
+
+  // Check if a group with this name exists, otherwise create one
+  const vault = await VaultStorage.getVault();
+  let existingGroup = vault.groups.find(g => g.name === groupName);
+
+  if (existingGroup) {
+    // Add to existing group
+    await VaultStorage.addTabsToGroup(existingGroup.id, [{
+      url: tab.url,
+      title: tab.title,
+      favIconUrl: tab.favIconUrl
+    }]);
+  } else {
+    // Create new group
+    await VaultStorage.addGroup(groupName, [{
+      url: tab.url,
+      title: tab.title,
+      favIconUrl: tab.favIconUrl
+    }]);
+  }
+
+  // Remove from history
+  await TabHistory.removeFromHistory(tab.id);
+
+  showToast('Added to vault', 'success');
+  await renderHistorySection();
+  await renderVaultGroups();
+}
+
 // Create a group card element
 function createGroupCard(group) {
   const card = document.createElement('div');
@@ -891,16 +1168,22 @@ function createGroupCard(group) {
   // Group header
   const header = document.createElement('div');
   header.className = 'group-header';
+  header.setAttribute('role', 'button');
+  header.setAttribute('tabindex', '0');
+  header.setAttribute('aria-expanded', expandedVaultGroups.has(group.id) ? 'true' : 'false');
+  header.setAttribute('aria-label', `${group.name}, ${group.tabs.length} ${pluralizeTabs(group.tabs.length)}`);
 
   // Drag handle
   const dragHandle = document.createElement('span');
   dragHandle.className = 'group-drag-handle';
   dragHandle.textContent = '\u2630'; // Hamburger menu icon
   dragHandle.title = 'Drag to reorder';
+  dragHandle.setAttribute('aria-hidden', 'true');
 
   const expand = document.createElement('span');
   expand.className = 'group-expand';
   expand.textContent = '\u25B6'; // Right triangle
+  expand.setAttribute('aria-hidden', 'true');
 
   const info = document.createElement('div');
   info.className = 'group-info';
@@ -917,51 +1200,76 @@ function createGroupCard(group) {
   info.appendChild(count);
 
   const actions = document.createElement('div');
-  actions.className = 'group-actions';
+  actions.className = 'group-actions group-icon-actions';
 
   const restoreBtn = document.createElement('button');
-  restoreBtn.className = 'btn btn-primary btn-small restore-group-btn';
-  restoreBtn.textContent = 'Restore';
+  restoreBtn.className = 'tab-action-btn group-action-btn restore-btn';
+  restoreBtn.textContent = '\u2197'; // ↗ North East Arrow
+  restoreBtn.title = 'Restore All';
+  restoreBtn.setAttribute('aria-label', 'Restore all tabs');
   restoreBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     await restoreGroup(group.id);
   });
 
   const copyBtn = document.createElement('button');
-  copyBtn.className = 'btn btn-secondary btn-small copy-group-btn';
-  copyBtn.textContent = 'Copy';
-  copyBtn.title = 'Open tabs without removing from vault';
+  copyBtn.className = 'tab-action-btn group-action-btn copy-btn';
+  copyBtn.textContent = '\u29C9'; // ⧉ Two Joined Squares
+  copyBtn.title = 'Copy all URLs to clipboard';
+  copyBtn.setAttribute('aria-label', 'Copy all URLs');
   copyBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    await duplicateGroup(group.id);
+    await copyGroupUrls(group);
   });
 
-  // Menu button with rename/delete options
-  const menuBtn = document.createElement('button');
-  menuBtn.className = 'btn btn-secondary btn-small group-menu-btn';
-  menuBtn.textContent = '\u22EE'; // Vertical ellipsis
-  menuBtn.addEventListener('click', (e) => {
+  const renameBtn = document.createElement('button');
+  renameBtn.className = 'tab-action-btn group-action-btn rename-btn';
+  renameBtn.textContent = '\u270E'; // ✎ Lower Right Pencil
+  renameBtn.title = 'Rename';
+  renameBtn.setAttribute('aria-label', 'Rename group');
+  renameBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    showGroupMenu(group, menuBtn);
+    await showRenameDialog(group);
+  });
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'tab-action-btn group-action-btn delete-btn';
+  deleteBtn.textContent = '\u2715'; // ✕ Multiplication X
+  deleteBtn.title = 'Delete';
+  deleteBtn.setAttribute('aria-label', 'Delete group');
+  deleteBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await deleteGroup(group);
   });
 
   actions.appendChild(restoreBtn);
   actions.appendChild(copyBtn);
-  actions.appendChild(menuBtn);
+  actions.appendChild(renameBtn);
+  actions.appendChild(deleteBtn);
 
   header.appendChild(dragHandle);
   header.appendChild(expand);
   header.appendChild(info);
   header.appendChild(actions);
 
-  header.addEventListener('click', (e) => {
+  const toggleVaultExpand = (e) => {
     if (e.target.closest('.group-actions') || e.target.closest('.group-drag-handle')) return;
     card.classList.toggle('expanded');
+    const isExpanded = card.classList.contains('expanded');
+    header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
     // Track expanded state
-    if (card.classList.contains('expanded')) {
+    if (isExpanded) {
       expandedVaultGroups.add(group.id);
     } else {
       expandedVaultGroups.delete(group.id);
+    }
+  };
+
+  header.addEventListener('click', toggleVaultExpand);
+  header.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleVaultExpand(e);
     }
   });
 
@@ -995,11 +1303,26 @@ function createTabItem(tab, groupId) {
     item.classList.add('active-tab');
     item.dataset.openTabId = openTab.id;
     item.title = 'Click to navigate to this tab';
+    item.setAttribute('role', 'button');
+    item.setAttribute('tabindex', '0');
+    item.setAttribute('aria-label', `Navigate to ${tab.title || 'tab'}`);
     item.addEventListener('click', async (e) => {
       // Don't navigate if clicking on buttons
       if (e.target.closest('button')) return;
       await navigateToTab(openTab.id);
     });
+    // Keyboard support for navigation
+    item.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        await navigateToTab(openTab.id);
+      }
+    });
+  } else {
+    // Inactive tab - not clickable, show tooltip explaining why
+    item.classList.add('inactive-tab');
+    item.title = 'Tab not open \u2014 use Restore to open';
+    item.setAttribute('aria-label', `${tab.title || 'Tab'} (not open)`);
   }
 
   // Drag-and-drop attributes for vault tabs
@@ -1009,63 +1332,45 @@ function createTabItem(tab, groupId) {
   item.addEventListener('dragover', handleDragOver);
   item.addEventListener('drop', handleDrop);
 
-  const favicon = document.createElement('img');
-  favicon.className = 'tab-favicon';
-  favicon.src = tab.favIconUrl || getDefaultFavicon();
-  favicon.alt = '';
-  favicon.onerror = () => {
-    favicon.src = getDefaultFavicon();
-  };
-
-  const info = document.createElement('div');
-  info.className = 'tab-info';
-
-  const titleRow = document.createElement('div');
-  titleRow.className = 'tab-title-row';
-
-  const title = document.createElement('div');
-  title.className = 'tab-title';
-  title.textContent = tab.title || 'Untitled';
-
-  titleRow.appendChild(title);
-
-  // Add active badge if tab is open
-  if (isActive) {
-    const activeBadge = document.createElement('span');
-    activeBadge.className = 'active-badge';
-    activeBadge.textContent = 'Active';
-    titleRow.appendChild(activeBadge);
-  }
-
-  const url = document.createElement('div');
-  url.className = 'tab-url';
-  url.textContent = truncateUrl(tab.url);
-
-  info.appendChild(titleRow);
-  info.appendChild(url);
+  const favicon = createFavicon(tab.favIconUrl);
+  const info = createTabInfo(tab.title, tab.url, isActive);
 
   const actions = document.createElement('div');
-  actions.className = 'tab-actions';
+  actions.className = 'tab-actions vault-item-actions';
 
   const restoreBtn = document.createElement('button');
-  restoreBtn.className = 'btn btn-secondary btn-small restore-tab-btn';
-  restoreBtn.textContent = 'Restore';
+  restoreBtn.className = 'tab-action-btn vault-item-btn restore-btn';
+  restoreBtn.textContent = '\u2197'; // ↗ North East Arrow
+  restoreBtn.title = 'Restore';
+  restoreBtn.setAttribute('aria-label', 'Restore tab');
   restoreBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     await restoreTab(groupId, tab.id);
   });
 
   const copyBtn = document.createElement('button');
-  copyBtn.className = 'btn btn-secondary btn-small copy-tab-btn';
-  copyBtn.textContent = 'Copy';
-  copyBtn.title = 'Open without removing from vault';
+  copyBtn.className = 'tab-action-btn vault-item-btn copy-btn';
+  copyBtn.textContent = '\u29C9'; // ⧉ Two Joined Squares
+  copyBtn.title = 'Copy URL to clipboard';
+  copyBtn.setAttribute('aria-label', 'Copy URL to clipboard');
   copyBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    await duplicateTab(groupId, tab.id);
+    await copyTabUrl(tab);
+  });
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'tab-action-btn vault-item-btn delete-btn';
+  deleteBtn.textContent = '\u2715'; // ✕ Multiplication X
+  deleteBtn.title = 'Delete';
+  deleteBtn.setAttribute('aria-label', 'Delete from vault');
+  deleteBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await deleteVaultTab(groupId, tab.id);
   });
 
   actions.appendChild(restoreBtn);
   actions.appendChild(copyBtn);
+  actions.appendChild(deleteBtn);
 
   item.appendChild(favicon);
   item.appendChild(info);
@@ -1097,11 +1402,6 @@ function setupEventListeners() {
   // Home tabs section toggle
   document.getElementById('homeTabsHeader').addEventListener('click', toggleHomeTabsSection);
 
-  // Edit patterns button (switches to Settings tab)
-  document.getElementById('editPatternsBtn').addEventListener('click', () => {
-    switchToTab('settings');
-  });
-
   // Select All / Deselect All
   document.getElementById('selectAllBtn').addEventListener('click', selectAllTabs);
   document.getElementById('deselectAllBtn').addEventListener('click', deselectAllTabs);
@@ -1118,9 +1418,14 @@ function setupEventListeners() {
     radio.addEventListener('change', handleThemeModeChange);
   });
 
-  // Palette selection
-  document.querySelectorAll('.palette-btn').forEach(btn => {
-    btn.addEventListener('click', () => handlePaletteChange(btn.dataset.palette));
+  // Light palette selection
+  document.querySelectorAll('#lightPaletteSelector .palette-btn').forEach(btn => {
+    btn.addEventListener('click', () => handlePaletteChange(btn.dataset.palette, 'light'));
+  });
+
+  // Dark palette selection
+  document.querySelectorAll('#darkPaletteSelector .palette-btn').forEach(btn => {
+    btn.addEventListener('click', () => handlePaletteChange(btn.dataset.palette, 'dark'));
   });
 
   // Unified search functionality
@@ -1204,26 +1509,24 @@ function updateSelectedCount() {
   document.getElementById('selectedCount').textContent = `${selectedTabIds.size} selected`;
 }
 
-// Select all open tabs
-function selectAllTabs() {
-  const checkboxes = document.querySelectorAll('.domain-tab-checkbox');
-  checkboxes.forEach(cb => {
-    if (!cb.checked) {
-      cb.checked = true;
+// Set all tab checkboxes to a specific state
+function setAllTabCheckboxes(checked) {
+  document.querySelectorAll('.domain-tab-checkbox').forEach(cb => {
+    if (cb.checked !== checked) {
+      cb.checked = checked;
       cb.dispatchEvent(new Event('change'));
     }
   });
 }
 
+// Select all open tabs
+function selectAllTabs() {
+  setAllTabCheckboxes(true);
+}
+
 // Deselect all open tabs
 function deselectAllTabs() {
-  const checkboxes = document.querySelectorAll('.domain-tab-checkbox');
-  checkboxes.forEach(cb => {
-    if (cb.checked) {
-      cb.checked = false;
-      cb.dispatchEvent(new Event('change'));
-    }
-  });
+  setAllTabCheckboxes(false);
 }
 
 // Vault selected tabs (renamed from shutdownSelectedTabs)
@@ -1232,6 +1535,17 @@ async function vaultSelectedTabs() {
     showToast('Please select at least one tab to vault.', 'error');
     return;
   }
+
+  const tabCount = selectedTabIds.size;
+
+  // Show confirmation dialog
+  const confirmed = await showModalConfirm(
+    'Vault Selected Tabs',
+    `Vault ${tabCount} selected ${pluralizeTabs(tabCount)}? They will be closed and saved to your vault.`,
+    'Vault'
+  );
+
+  if (!confirmed) return;
 
   // Always group by domain for selected tabs
   const response = await chrome.runtime.sendMessage({
@@ -1305,7 +1619,11 @@ async function addNewPattern() {
     return;
   }
 
-  await HomeTabs.addHomePattern(pattern);
+  const result = await HomeTabs.addHomePattern(pattern);
+  if (result.error) {
+    showToast(result.error, 'error');
+    return;
+  }
   input.value = '';
   await renderHomePatterns();
   showToast('Pattern added', 'success');
@@ -1316,7 +1634,11 @@ async function addCurrentTabAsPattern() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab && tab.url) {
-      await HomeTabs.addHomePattern(tab.url);
+      const result = await HomeTabs.addHomePattern(tab.url);
+      if (result.error) {
+        showToast(result.error, 'error');
+        return;
+      }
       await renderHomePatterns();
       showToast('Current tab added as home tab', 'success');
     }
@@ -1350,12 +1672,7 @@ async function renderSearchResults() {
   // Filter tabs across all groups
   const results = [];
   for (const group of vault.groups) {
-    const matchingTabs = group.tabs.filter(tab => {
-      const titleMatch = (tab.title || '').toLowerCase().includes(currentSearchQuery);
-      const urlMatch = (tab.url || '').toLowerCase().includes(currentSearchQuery);
-      return titleMatch || urlMatch;
-    });
-
+    const matchingTabs = group.tabs.filter(tab => matchesSearch(tab, currentSearchQuery));
     if (matchingTabs.length > 0) {
       results.push({ group, tabs: matchingTabs });
     }
@@ -1445,8 +1762,6 @@ function createSearchResultGroupCard(group, matchingTabs) {
 }
 
 // Shutdown all tabs (except home tabs)
-// Pending shutdown data for confirmation dialog
-let pendingShutdownData = null;
 
 async function shutdownAll() {
   const tabs = await chrome.tabs.query({});
@@ -1456,7 +1771,7 @@ async function shutdownAll() {
   const homeTabs = [];
 
   for (const tab of tabs) {
-    if (isSkippableUrl(tab.url)) continue;
+    if (UrlUtils.isSkippableUrl(tab.url)) continue;
     if (HomeTabs.isHomeTabSync(tab.url, homePatterns)) {
       homeTabs.push(tab);
     } else {
@@ -1507,6 +1822,113 @@ function showConfirmDialog(tabCount, homeTabCount) {
 function hideConfirmDialog() {
   const dialog = document.getElementById('confirmDialog');
   dialog.classList.add('hidden');
+}
+
+/**
+ * Show a modal dialog (confirm or prompt)
+ * @param {Object} options - Dialog options
+ * @param {string} options.title - Dialog title
+ * @param {string} options.message - Message to display
+ * @param {string} [options.confirmText='OK'] - Text for confirm button
+ * @param {boolean} [options.showInput=false] - Whether to show input field
+ * @param {string} [options.defaultValue=''] - Default input value (if showInput)
+ * @returns {Promise<boolean|string|null>} - boolean for confirm, string/null for prompt
+ */
+function showModal(options) {
+  const { title, message, confirmText = 'OK', showInput = false, defaultValue = '' } = options;
+
+  return new Promise((resolve) => {
+    const dialog = document.getElementById('modalDialog');
+    const titleEl = document.getElementById('modalDialogTitle');
+    const messageEl = document.getElementById('modalDialogMessage');
+    const inputEl = document.getElementById('modalDialogInput');
+    const confirmBtn = document.getElementById('modalDialogConfirm');
+    const cancelBtn = document.getElementById('modalDialogCancel');
+
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    confirmBtn.textContent = confirmText;
+
+    if (showInput) {
+      inputEl.classList.remove('hidden');
+      inputEl.value = defaultValue;
+    } else {
+      inputEl.classList.add('hidden');
+    }
+
+    const cleanup = () => {
+      dialog.classList.add('hidden');
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      if (showInput) {
+        inputEl.removeEventListener('keydown', onInputKeydown);
+      }
+      document.removeEventListener('keydown', onKeydown);
+    };
+
+    const onConfirm = () => {
+      cleanup();
+      resolve(showInput ? inputEl.value : true);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve(showInput ? null : false);
+    };
+
+    const onInputKeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        onConfirm();
+      }
+    };
+
+    const onKeydown = (e) => {
+      if (e.key === 'Escape') {
+        onCancel();
+      } else if (!showInput && e.key === 'Enter') {
+        onConfirm();
+      }
+    };
+
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+    if (showInput) {
+      inputEl.addEventListener('keydown', onInputKeydown);
+    }
+    document.addEventListener('keydown', onKeydown);
+
+    dialog.classList.remove('hidden');
+
+    if (showInput) {
+      inputEl.focus();
+      inputEl.select();
+    } else {
+      confirmBtn.focus();
+    }
+  });
+}
+
+/**
+ * Show a themed confirmation dialog
+ * @param {string} title - Dialog title
+ * @param {string} message - Message to display
+ * @param {string} confirmText - Text for confirm button (default: "OK")
+ * @returns {Promise<boolean>} - True if confirmed, false if cancelled
+ */
+function showModalConfirm(title, message, confirmText = 'OK') {
+  return showModal({ title, message, confirmText });
+}
+
+/**
+ * Show a themed prompt dialog
+ * @param {string} title - Dialog title
+ * @param {string} message - Message to display
+ * @param {string} defaultValue - Default input value
+ * @returns {Promise<string|null>} - Input value if confirmed, null if cancelled
+ */
+function showModalPrompt(title, message, defaultValue = '') {
+  return showModal({ title, message, showInput: true, defaultValue });
 }
 
 // Handle confirm button click
@@ -1564,7 +1986,11 @@ async function restoreGroup(groupId) {
   if (group.tabs.length >= 10) {
     const skipConfirm = await Settings.getSetting('skipLargeRestoreConfirm');
     if (!skipConfirm) {
-      const confirmed = confirm(`Restore ${group.tabs.length} ${pluralizeTabs(group.tabs.length)}? This will open them all in new tabs.`);
+      const confirmed = await showModalConfirm(
+        'Restore Group',
+        `Restore ${group.tabs.length} ${pluralizeTabs(group.tabs.length)}? This will open them all in new tabs.`,
+        'Restore'
+      );
       if (!confirmed) return;
     }
   }
@@ -1600,90 +2026,46 @@ async function restoreTab(groupId, tabId) {
   }
 }
 
-// Duplicate a group (open without removing from vault)
-async function duplicateGroup(groupId) {
-  const response = await chrome.runtime.sendMessage({
-    action: 'duplicate-group',
-    groupId: groupId
-  });
-
-  if (response.success) {
-    showToast(`Opened ${response.count} ${pluralizeTabs(response.count)} (kept in vault)`, 'success');
-    await updateLiveTabCount();
-  } else {
-    showToast('Error: ' + (response.error || 'Unknown error'), 'error');
+// Copy all URLs from a group to clipboard
+async function copyGroupUrls(group) {
+  try {
+    const urls = group.tabs.map(t => t.url).join('\n');
+    await navigator.clipboard.writeText(urls);
+    showToast(`Copied ${group.tabs.length} URL${group.tabs.length !== 1 ? 's' : ''}`, 'success');
+  } catch (error) {
+    showToast('Failed to copy to clipboard', 'error');
   }
 }
 
-// Duplicate a single tab (open without removing from vault)
-async function duplicateTab(groupId, tabId) {
-  const response = await chrome.runtime.sendMessage({
-    action: 'duplicate-tabs',
-    groupId: groupId,
-    tabIds: [tabId]
-  });
-
-  if (response.success) {
-    showToast('Tab opened (kept in vault)', 'success');
-    await updateLiveTabCount();
-  } else {
-    showToast('Error: ' + (response.error || 'Unknown error'), 'error');
+// Copy a single tab URL to clipboard
+async function copyTabUrl(tab) {
+  try {
+    await navigator.clipboard.writeText(tab.url);
+    showToast('Copied to clipboard', 'success');
+  } catch (error) {
+    showToast('Failed to copy to clipboard', 'error');
   }
 }
 
-// Show group menu (rename/delete/move)
-async function showGroupMenu(group, anchorEl) {
-  // Remove any existing menu
-  const existingMenu = document.querySelector('.group-menu-dropdown');
-  if (existingMenu) existingMenu.remove();
+// Delete a single tab from the vault
+async function deleteVaultTab(groupId, tabId) {
+  await VaultStorage.removeTabsFromGroup(groupId, [tabId]);
 
-  const menu = document.createElement('div');
-  menu.className = 'group-menu-dropdown';
+  // Check if group is now empty and remove it
+  const group = await VaultStorage.getGroup(groupId);
+  if (group && group.tabs.length === 0) {
+    await VaultStorage.removeGroup(groupId);
+  }
 
-  const renameOption = document.createElement('button');
-  renameOption.className = 'menu-option';
-  renameOption.textContent = 'Rename';
-  renameOption.addEventListener('click', (e) => {
-    e.stopPropagation();
-    menu.remove();
-    showRenameDialog(group);
-  });
-
-  const deleteOption = document.createElement('button');
-  deleteOption.className = 'menu-option menu-option-danger';
-  deleteOption.textContent = 'Delete';
-  deleteOption.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    menu.remove();
-    await deleteGroup(group);
-  });
-
-  menu.appendChild(renameOption);
-  menu.appendChild(deleteOption);
-
-  // Position menu relative to anchor
-  const rect = anchorEl.getBoundingClientRect();
-  menu.style.position = 'fixed';
-  menu.style.top = `${rect.bottom + 4}px`;
-  menu.style.right = `${window.innerWidth - rect.right}px`;
-
-  document.body.appendChild(menu);
-
-  // Close menu when clicking elsewhere
-  const closeMenu = (e) => {
-    if (!menu.contains(e.target)) {
-      menu.remove();
-      document.removeEventListener('click', closeMenu);
-    }
-  };
-  setTimeout(() => document.addEventListener('click', closeMenu), 0);
+  showToast('Tab removed', 'success');
+  await renderVaultGroups();
 }
 
 // Show rename dialog
-function showRenameDialog(group) {
-  const newName = prompt('Enter new group name:', group.name);
+async function showRenameDialog(group) {
+  const newName = await showModalPrompt('Rename Group', 'Enter new group name:', group.name);
   if (newName && newName.trim() && newName !== group.name) {
-    renameGroup(group.id, newName.trim());
+    await renameGroup(group.id, newName.trim());
   }
 }
 
@@ -1696,7 +2078,11 @@ async function renameGroup(groupId, newName) {
 
 // Delete a group
 async function deleteGroup(group) {
-  const confirmed = confirm(`Delete "${group.name}" and all ${group.tabs.length} ${pluralizeTabs(group.tabs.length)} in it?`);
+  const confirmed = await showModalConfirm(
+    'Delete Group',
+    `Delete "${group.name}" and all ${group.tabs.length} ${pluralizeTabs(group.tabs.length)} in it?`,
+    'Delete'
+  );
   if (confirmed) {
     await VaultStorage.removeGroup(group.id);
     showToast('Group deleted', 'success');
@@ -1704,52 +2090,9 @@ async function deleteGroup(group) {
   }
 }
 
-// Move a group up or down
-async function moveGroup(groupId, direction) {
-  const vault = await VaultStorage.getVault();
-  const index = vault.groups.findIndex(g => g.id === groupId);
-
-  if (index === -1) return;
-
-  const newIndex = index + direction;
-  if (newIndex < 0 || newIndex >= vault.groups.length) return;
-
-  // Swap groups
-  [vault.groups[index], vault.groups[newIndex]] = [vault.groups[newIndex], vault.groups[index]];
-
-  await VaultStorage.saveVault(vault);
-  await renderVaultGroups();
-}
-
-// Utility: Get default favicon
-function getDefaultFavicon() {
-  return 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22><rect fill=%22%23ddd%22 width=%2216%22 height=%2216%22 rx=%222%22/></svg>';
-}
-
-// Utility: Truncate URL for display
-function truncateUrl(url) {
-  if (!url) return '';
-  try {
-    const parsed = new URL(url);
-    const path = parsed.pathname + parsed.search;
-    const truncatedPath = path.length > 40 ? path.substring(0, 40) + '...' : path;
-    return parsed.hostname + truncatedPath;
-  } catch {
-    return url.length > 50 ? url.substring(0, 50) + '...' : url;
-  }
-}
-
 // ============================================
-// DRAG AND DROP HANDLERS (Infrastructure for TV2-007)
+// DRAG AND DROP HANDLERS
 // ============================================
-// These handlers provide the foundation for dragging tabs between vault groups.
-// Full implementation is in TV2-007.
-//
-// Drag flow:
-// 1. User starts dragging a tab item (dragstart)
-// 2. As they drag over groups/tabs, visual feedback is shown (dragover)
-// 3. On drop, the tab is moved to the target group (drop)
-// 4. Cleanup happens after drag ends (dragend)
 
 // Track the currently dragged item
 let draggedItem = null;
@@ -1759,8 +2102,14 @@ let isDraggingGroup = false; // true when dragging a whole group to reorder
 
 // Handle drag start on a tab item
 function handleDragStart(e) {
+  // Stop propagation to prevent group dragstart from firing
+  e.stopPropagation();
+
   draggedItem = e.target.closest('.tab-item');
   if (!draggedItem) return;
+
+  // Reset group dragging flag - we're dragging a tab, not a group
+  isDraggingGroup = false;
 
   draggedTabId = draggedItem.dataset.tabId;
   draggedGroupId = draggedItem.dataset.groupId;
@@ -1771,6 +2120,7 @@ function handleDragStart(e) {
   // Set drag data
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', JSON.stringify({
+    type: 'tab',
     tabId: draggedTabId,
     groupId: draggedGroupId
   }));
@@ -1778,23 +2128,27 @@ function handleDragStart(e) {
 
 // Handle drag end (cleanup)
 function handleDragEnd(e) {
+  e.stopPropagation(); // Prevent bubbling to group drag end handler
+
   if (draggedItem) {
     draggedItem.classList.remove('dragging');
   }
 
   // Clear all drag-over states
-  document.querySelectorAll('.drag-over, .drop-target').forEach(el => {
-    el.classList.remove('drag-over', 'drop-target');
+  document.querySelectorAll('.drag-over, .drop-target, .drop-above, .drop-below').forEach(el => {
+    el.classList.remove('drag-over', 'drop-target', 'drop-above', 'drop-below');
   });
 
   draggedItem = null;
   draggedTabId = null;
   draggedGroupId = null;
+  isDraggingGroup = false;
 }
 
 // Handle drag over a tab item (for positioning within a group)
 function handleDragOver(e) {
   e.preventDefault();
+  e.stopPropagation(); // Prevent bubbling to group drag over handler
   e.dataTransfer.dropEffect = 'move';
 
   const target = e.target.closest('.tab-item');
@@ -1811,6 +2165,7 @@ function handleDragOver(e) {
 // Handle drop on a tab item
 async function handleDrop(e) {
   e.preventDefault();
+  e.stopPropagation(); // Prevent bubbling to group drop handler
 
   const target = e.target.closest('.tab-item');
   if (!target || target === draggedItem) return;
@@ -1922,6 +2277,18 @@ async function moveTabToPosition(sourceGroupId, tabId, targetGroupId, beforeTabI
     targetGroup.tabs.splice(beforeIndex, 0, tab);
   }
 
+  // Remove source group if now empty
+  if (sourceGroup.tabs.length === 0) {
+    const sourceIndex = vault.groups.findIndex(g => g.id === sourceGroupId);
+    if (sourceIndex !== -1) {
+      vault.groups.splice(sourceIndex, 1);
+      expandedVaultGroups.delete(sourceGroupId);
+    }
+  }
+
+  // Expand target group to show the moved tab
+  expandedVaultGroups.add(targetGroupId);
+
   // Save and re-render
   await VaultStorage.saveVault(vault);
   await renderVaultGroups();
@@ -1946,6 +2313,18 @@ async function moveTabToGroup(sourceGroupId, tabId, targetGroupId) {
 
   // Add to target group at the end
   targetGroup.tabs.push(tab);
+
+  // Remove source group if now empty
+  if (sourceGroup.tabs.length === 0) {
+    const sourceIndex = vault.groups.findIndex(g => g.id === sourceGroupId);
+    if (sourceIndex !== -1) {
+      vault.groups.splice(sourceIndex, 1);
+      expandedVaultGroups.delete(sourceGroupId);
+    }
+  }
+
+  // Expand target group to show the moved tab
+  expandedVaultGroups.add(targetGroupId);
 
   // Save and re-render
   await VaultStorage.saveVault(vault);

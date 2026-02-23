@@ -25,11 +25,51 @@
 
 const VAULT_KEY = 'vault';
 
+// Concurrency lock for read-modify-write operations
+let _storageLock = null;
+
+/**
+ * Execute an operation with exclusive access to storage
+ * Prevents race conditions in read-modify-write operations
+ * @param {Function} operation - Async function to execute
+ * @returns {Promise} Result of the operation
+ */
+async function withLock(operation) {
+  // Wait for any existing lock to release
+  while (_storageLock) {
+    await _storageLock;
+  }
+
+  // Create a new lock
+  let resolve;
+  _storageLock = new Promise(r => { resolve = r; });
+
+  try {
+    return await operation();
+  } finally {
+    resolve();
+    _storageLock = null;
+  }
+}
+
 /**
  * Generate a unique ID
  */
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
+}
+
+/**
+ * Sanitize group name for safe storage and display
+ * @param {string} name
+ * @returns {string}
+ */
+function sanitizeGroupName(name) {
+  if (!name || typeof name !== 'string') return 'Untitled';
+  return name
+    .replace(/[<>]/g, '') // Remove angle brackets
+    .substring(0, 200)
+    .trim() || 'Untitled';
 }
 
 /**
@@ -70,25 +110,27 @@ async function saveVault(vault) {
  * @returns {Promise<Object>} - The created group
  */
 async function addGroup(name, tabs = []) {
-  const vault = await getVault();
-  const now = Date.now();
+  return withLock(async () => {
+    const vault = await getVault();
+    const now = Date.now();
 
-  const group = {
-    id: generateId(),
-    name: name,
-    createdAt: now,
-    tabs: tabs.map(tab => ({
+    const group = {
       id: generateId(),
-      url: tab.url || '',
-      title: tab.title || 'Untitled',
-      favIconUrl: tab.favIconUrl || '',
-      vaultedAt: now
-    }))
-  };
+      name: sanitizeGroupName(name),
+      createdAt: now,
+      tabs: tabs.map(tab => ({
+        id: generateId(),
+        url: tab.url || '',
+        title: tab.title || 'Untitled',
+        favIconUrl: tab.favIconUrl || '',
+        vaultedAt: now
+      }))
+    };
 
-  vault.groups.push(group);
-  await saveVault(vault);
-  return group;
+    vault.groups.push(group);
+    await saveVault(vault);
+    return group;
+  });
 }
 
 /**
@@ -97,15 +139,17 @@ async function addGroup(name, tabs = []) {
  * @returns {Promise<boolean>} - True if removed
  */
 async function removeGroup(groupId) {
-  const vault = await getVault();
-  const initialLength = vault.groups.length;
-  vault.groups = vault.groups.filter(g => g.id !== groupId);
+  return withLock(async () => {
+    const vault = await getVault();
+    const initialLength = vault.groups.length;
+    vault.groups = vault.groups.filter(g => g.id !== groupId);
 
-  if (vault.groups.length < initialLength) {
-    await saveVault(vault);
-    return true;
-  }
-  return false;
+    if (vault.groups.length < initialLength) {
+      await saveVault(vault);
+      return true;
+    }
+    return false;
+  });
 }
 
 /**
@@ -115,25 +159,27 @@ async function removeGroup(groupId) {
  * @returns {Promise<Object|null>} - The updated group or null if not found
  */
 async function addTabsToGroup(groupId, tabs) {
-  const vault = await getVault();
-  const group = vault.groups.find(g => g.id === groupId);
+  return withLock(async () => {
+    const vault = await getVault();
+    const group = vault.groups.find(g => g.id === groupId);
 
-  if (!group) {
-    return null;
-  }
+    if (!group) {
+      return null;
+    }
 
-  const now = Date.now();
-  const newTabs = tabs.map(tab => ({
-    id: generateId(),
-    url: tab.url || '',
-    title: tab.title || 'Untitled',
-    favIconUrl: tab.favIconUrl || '',
-    vaultedAt: now
-  }));
+    const now = Date.now();
+    const newTabs = tabs.map(tab => ({
+      id: generateId(),
+      url: tab.url || '',
+      title: tab.title || 'Untitled',
+      favIconUrl: tab.favIconUrl || '',
+      vaultedAt: now
+    }));
 
-  group.tabs.push(...newTabs);
-  await saveVault(vault);
-  return group;
+    group.tabs.push(...newTabs);
+    await saveVault(vault);
+    return group;
+  });
 }
 
 /**
@@ -143,17 +189,19 @@ async function addTabsToGroup(groupId, tabs) {
  * @returns {Promise<Object|null>} - The updated group or null if not found
  */
 async function removeTabsFromGroup(groupId, tabIds) {
-  const vault = await getVault();
-  const group = vault.groups.find(g => g.id === groupId);
+  return withLock(async () => {
+    const vault = await getVault();
+    const group = vault.groups.find(g => g.id === groupId);
 
-  if (!group) {
-    return null;
-  }
+    if (!group) {
+      return null;
+    }
 
-  const tabIdSet = new Set(tabIds);
-  group.tabs = group.tabs.filter(t => !tabIdSet.has(t.id));
-  await saveVault(vault);
-  return group;
+    const tabIdSet = new Set(tabIds);
+    group.tabs = group.tabs.filter(t => !tabIdSet.has(t.id));
+    await saveVault(vault);
+    return group;
+  });
 }
 
 /**
@@ -173,19 +221,43 @@ async function getGroup(groupId) {
  * @returns {Promise<Object|null>}
  */
 async function updateGroup(groupId, updates) {
-  const vault = await getVault();
-  const group = vault.groups.find(g => g.id === groupId);
+  return withLock(async () => {
+    const vault = await getVault();
+    const group = vault.groups.find(g => g.id === groupId);
 
-  if (!group) {
-    return null;
-  }
+    if (!group) {
+      return null;
+    }
 
-  if (updates.name !== undefined) {
-    group.name = updates.name;
-  }
+    if (updates.name !== undefined) {
+      group.name = sanitizeGroupName(updates.name);
+    }
 
-  await saveVault(vault);
-  return group;
+    await saveVault(vault);
+    return group;
+  });
+}
+
+/**
+ * Reorder groups by moving a group from one index to another
+ * @param {number} fromIndex - Current index of the group
+ * @param {number} toIndex - Target index for the group
+ * @returns {Promise<boolean>} - True if reordered
+ */
+async function reorderGroups(fromIndex, toIndex) {
+  return withLock(async () => {
+    const vault = await getVault();
+
+    if (fromIndex < 0 || fromIndex >= vault.groups.length ||
+        toIndex < 0 || toIndex >= vault.groups.length) {
+      return false;
+    }
+
+    const [group] = vault.groups.splice(fromIndex, 1);
+    vault.groups.splice(toIndex, 0, group);
+    await saveVault(vault);
+    return true;
+  });
 }
 
 // Export for use in other modules
@@ -197,7 +269,8 @@ const VaultStorage = {
   addTabsToGroup,
   removeTabsFromGroup,
   getGroup,
-  updateGroup
+  updateGroup,
+  reorderGroups
 };
 
 // Make available globally for both window (popup) and service worker contexts

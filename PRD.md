@@ -1,295 +1,212 @@
-# PRD: Tab Goblin v3 — Chrome Extension
+# PRD: Tab Goblin v5 — Bug Fixes and UI Polish
 
 ## Overview
 
-**Tab Goblin** (formerly Tab Vault) is a Chrome extension that solves RAM/CPU drain from too many tabs while preserving them as workflow aids. Tabs are either live (open) or vaulted (fully closed and saved). No suspension, no halfway — closed is closed.
+**Tab Goblin** is a Chrome extension that solves RAM/CPU drain from too many tabs while preserving them as workflow aids. Tabs are either live (open) or vaulted (fully closed and saved). No suspension, no halfway — closed is closed.
 
-## v3 Goals
+## v5 Goals
 
-1. **Bug Fix:** Resolve Live Tabs panel not displaying open tabs
-2. **Rebrand:** Rename from "Tab Vault" to "Tab Goblin"
-3. **Theme System:** Add light/dark/system/custom theme support
-4. **UI Refinement:** Simplified header, consistent visual styling
-5. **Navigation:** Click active tabs to navigate, auto-navigate on restore
+This release focuses on **bug fixes**, **UI polish**, and **UX consistency**. Addressing user-reported issues and refining the interface for a smoother experience.
 
----
-
-## Core Concept
-
-A tab exists in one of two states:
-- **Live** — open in the browser, consuming resources
-- **Vaulted** — fully closed, saved with URL/title/favicon, grouped by domain
-
-Vaulted tabs are *closed*, not sleeping. This is what actually frees RAM/CPU.
+1. **Fix Home Tab Bugs** — Manual close handling, pattern cleanup on removal
+2. **Fix History Behavior** — Duplicate prevention, proper accordion behavior
+3. **Fix Vault UI** — Icon buttons, proper copy behavior, drag-and-drop reflection
+4. **Add Light Mode Themes** — 5 light palettes matching the dark themes
+5. **Remove Deprecated UI** — Edit Patterns section from Live Tabs, Move Up/Down buttons
 
 ---
 
-## Features
+## Problem Statement
 
-### 1. Vault Groups
+Users have reported several bugs and UX inconsistencies:
 
-Tabs are organized into **groups** inside the vault.
-
-- A group has a name and contains one or more vaulted tabs
-- Users can create groups manually or let the extension auto-group by domain
-- Groups can be renamed, reordered, and deleted
-- Groups persist across browser restarts (`chrome.storage.local`)
-- Drag-and-drop tabs between groups
-
-### 2. Shutdown (Vault Tabs)
-
-"Shutdown" closes live tabs and saves them to the vault.
-
-- **Shutdown selected tabs** — user picks which tabs to vault
-- **Shutdown all tabs** — vaults everything except home tabs
-- **Shutdown by domain** — vault all tabs from a domain group
-- Confirmation dialog for "Shutdown All" (always shown for 10+ tabs)
-- Tabs auto-grouped by domain or into custom named group
-
-### 3. Restore (Open Tabs)
-
-"Restore" reopens vaulted tabs and removes them from the vault.
-
-- **Restore a group** — reopens all tabs in a group, navigates to first tab
-- **Restore individual tabs** — pick specific tabs, navigates to restored tab
-- **Copy (Duplicate)** — open without removing from vault
-- Confirmation for large restores (10+ tabs)
-- **Auto-navigate** — browser automatically switches to restored tab(s)
-
-### 4. Home Tabs (Protected)
-
-Users designate certain tabs or URLs as "home tabs" that are never vaulted.
-
-- Home tabs are excluded from "shutdown all" operations
-- Supports URL wildcard patterns (e.g., `*://mail.google.com/*`)
-- Quick add/remove from Live Tabs panel
-- Distinct visual section in Live Tabs view
-
-### 5. Side Panel UI
-
-The side panel is the primary interface, opened by clicking the extension icon.
-
-**Three-Tab Navigation:**
-- **Vault** — Vaulted groups with search, restore/copy actions
-- **Live Tabs** — Home section + open tabs grouped by domain
-- **Settings** — Home tab pattern configuration, theme selection
-
-**Header Area:**
-- "Shutdown All" button (always visible)
-- Clean, minimal design (same background as panel content)
-
-**Status Bar:**
-- Live tab count at bottom
-
-### 6. Theme System
-
-Users can select their preferred visual theme.
-
-**Theme Modes:**
-- **System** (default) — Follows OS light/dark preference
-- **Light** — Light color scheme
-- **Dark** — Dark color scheme
-- **Custom** — User-selectable theme palette
-
-**Built-in Theme Palettes (Dark):**
-1. **Midnight Glass** — Cool, minimal, techy (blues)
-2. **Neon Ember** — Warm, bold, high energy (oranges)
-3. **Soft Lavender** — Calm, muted purple, zen
-4. **Arctic Mint** — Fresh, clean, nature-tech (greens)
-5. **Slate Minimal** — Neutral pro, pure function (grays/indigos)
-
-**Light Mode Palettes:**
-- Light versions of each palette with appropriate contrast
-
-**Theme Variables:**
-| Variable | Purpose |
-|----------|---------|
-| `--bg` | Main background |
-| `--bg-surface` | Cards, sections |
-| `--bg-hover` | Hover states |
-| `--primary` | Primary action buttons |
-| `--primary-hover` | Button hover |
-| `--accent` | Active states, highlights |
-| `--text` | Primary text |
-| `--text-secondary` | Secondary/muted text |
-| `--text-on-primary` | Text on primary buttons |
-| `--border` | Borders, dividers |
-| `--success` | Success toasts |
-| `--error` | Error toasts, danger actions |
-| `--warning` | Warning states |
-
-**Implementation Requirements:**
-- All colors via CSS custom properties
-- Theme class on root element (e.g., `data-theme="midnight-glass"`)
-- `prefers-color-scheme` media query for system mode
-- Ensure text contrast meets WCAG AA (4.5:1 minimum)
-- Icons/imagery must be visible in all themes
-
-### 7. Keyboard Shortcuts
-
-- `Alt+Shift+V` — Vault current tab
-- `Alt+Shift+A` — Vault all tabs (except home)
-- Standard keyboard navigation within panel
-
-### 8. Tab Navigation
-
-Navigate between vault and live tabs seamlessly.
-
-**Active Tab Indicators:**
-- Vault panel shows which vaulted tabs are currently open in the browser
-- "Active" badge/indicator on tabs that match open browser tabs
-- Real-time updates as tabs are opened/closed
-
-**Click to Navigate:**
-- Clicking an active vault tab navigates to that open tab
-- Focuses both the tab and its containing window
-- Works across multiple windows
-
-**Auto-Navigate on Restore:**
-- Restoring a single tab navigates to the restored tab
-- Restoring a group navigates to the first restored tab
-- Browser window is focused automatically
-
-**Chrome APIs:**
-```javascript
-// Navigate to a tab
-await chrome.tabs.update(tabId, { active: true });
-await chrome.windows.update(windowId, { focused: true });
-```
+- **Home Tab Issues**: Manually closing a home tab doesn't behave correctly; removing a home tab doesn't clear its pattern
+- **History Issues**: Restored tabs re-enter history when closed; duplicates accumulate; wrong default expand state
+- **Vault UI Issues**: Copy button opens tabs instead of copying to clipboard; drag-and-drop shows success but doesn't update UI; text buttons feel cluttered
+- **Theme Parity**: Dark mode has 5 theme options, light mode has none
+- **Redundant UI**: Edit Patterns exists on Settings page but also clutters Live Tabs
 
 ---
 
-## UI Changes from v2
+## Requirements
 
-### Header
-- **Remove:** Blue background banner with "Tab Vault" title
-- **Keep:** "Shutdown All" button, repositioned
-- **Result:** Clean, minimal header that matches panel background
+### Category 1: Home Tab Fixes
 
-### Emojis
-- **Remove:** All emoji characters from UI
-- **Replace with:** Text labels or placeholder for future icons
-- Affected: Home tabs icon (house emoji), expand/collapse arrows
+#### 1.1 Manual Home Tab Close Handling
+**Current**: When a home tab is manually closed, behavior is inconsistent
+**Expected**: Home tabs can be manually closed by the user without special handling — they should close normally like any other tab, but NOT be vaulted (they are protected from "Vault All" operations, not from manual close)
 
-### Naming
-- **Old:** Tab Vault
-- **New:** Tab Goblin
-- Update in: manifest.json, HTML titles, onboarding, documentation
+#### 1.2 Home Tab Pattern Cleanup
+**Current**: When a home tab is removed from the Home Tab section, its pattern remains in storage
+**Expected**: Removing a home tab from the UI should also remove its pattern from `HomeTabStorage`
 
 ---
 
-## Technical Requirements
+### Category 2: History Behavior Fixes
 
-### Bug Fix: Live Tabs Not Displaying
+#### 2.1 Prevent Restored Tabs from Re-entering History
+**Current**: When a vault item is restored and then the tab is closed, it re-enters history as a new entry
+**Expected**: When a tab is closed, check if its URL matches an existing vault item. If so, do NOT add to history.
 
-**Symptom:** Live Tabs panel shows "Open Tabs: 0" but status bar shows actual count (e.g., 43)
+#### 2.2 Prevent Duplicate History Entries
+**Current**: Multiple entries for the same URL can accumulate in history
+**Expected**: Before adding to history, check if URL already exists. If so, skip or update timestamp.
 
-**Investigation Areas:**
-1. `chrome.tabs.query({})` may return tabs without `url` property
-2. Need to check if `tabs` permission grants full URL access in side panel context
-3. The `isSkippableUrl()` function returns true when `!url` — may be filtering all tabs
+#### 2.3 History Collapsed by Default
+**Current**: History section may be expanded by default
+**Expected**: History section should be COLLAPSED by default
 
-**Fix Approach:**
-- Debug `chrome.tabs.query({})` response in side panel
-- Verify tabs permission is sufficient
-- Handle case where URL might be undefined initially
-- Consider using `chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] })` to filter
-
-### Theme System Architecture
-
-**Storage:**
-```javascript
-{
-  settings: {
-    themeMode: 'system' | 'light' | 'dark' | 'custom',
-    themePalette: 'midnight-glass' | 'neon-ember' | 'soft-lavender' | 'arctic-mint' | 'slate-minimal',
-    // ... other settings
-  }
-}
-```
-
-**CSS Structure:**
-```css
-/* Base variables (light mode defaults) */
-:root {
-  --bg: #ffffff;
-  --text: #333333;
-  /* ... */
-}
-
-/* Dark mode system preference */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    --bg: #0f172a;
-    /* ... */
-  }
-}
-
-/* Explicit theme overrides */
-[data-theme="midnight-glass"] {
-  --bg: #0f172a;
-  --bg-surface: #1e293b;
-  --primary: #0ea5e9;
-  --accent: #7dd3fc;
-  --text: #e2e8f0;
-  --text-secondary: #64748b;
-  /* ... */
-}
-```
-
-**Theme Application:**
-- On load: Read setting, apply `data-theme` attribute
-- On change: Update attribute, save to storage
-- System mode: No attribute, let CSS handle via media query
+#### 2.4 History Position and Direction
+**Current**: History position may vary
+**Expected**: History should be at the BOTTOM of the Vault tab, and should accordion UPWARDS when expanded
 
 ---
 
-## Non-Goals (v3)
+### Category 3: Vault UI Improvements
 
+#### 3.1 Icon Buttons for Individual Vault Items
+**Current**: Individual vault items use text buttons (Restore, Copy, Delete)
+**Expected**: Use icon buttons:
+- Restore: ↗ or similar "open" icon
+- Copy: 📋 or clipboard icon (Unicode, no emoji)
+- Delete: ✕ or trash icon
+
+#### 3.2 Icon Buttons for Vault Groups
+**Current**: Vault groups use text buttons
+**Expected**: Use icon buttons for:
+- Restore (all in group)
+- Rename (group name)
+- Copy (all URLs in group)
+- Delete (entire group)
+
+#### 3.3 Remove Move Up/Down Buttons
+**Current**: Vault groups have Move Up and Move Down buttons in menu
+**Expected**: Remove these buttons entirely — drag-and-drop is sufficient for reordering
+
+#### 3.4 Fix Copy Button Behavior
+**Current**: Copy button opens tabs (same as Restore)
+**Expected**: Copy button should:
+- For individual item: Copy the URL to clipboard
+- For group: Copy all URLs (newline-separated) to clipboard
+- Show visual confirmation (toast: "Copied to clipboard" or similar)
+- NOT open any tabs
+
+#### 3.5 Fix Drag-and-Drop Visual Update
+**Current**: Dragging items between vault sections shows success alert but UI doesn't reflect the change
+**Expected**: After successful drag-and-drop:
+- Update storage
+- Re-render affected sections immediately
+- Show success feedback only after UI updates
+
+---
+
+### Category 4: Light Mode Themes
+
+#### 4.1 Add 5 Light Theme Palettes
+**Current**: Dark mode has 5 theme options (Midnight Glass, Neon Ember, Soft Lavender, Arctic Mint, Slate Minimal); Light mode has no palette options
+**Expected**: Add 5 light theme palettes as companions to the dark themes:
+
+| Dark Theme | Light Companion | Primary Color |
+|------------|-----------------|---------------|
+| Midnight Glass | Daylight Glass | #0284C7 (sky blue) |
+| Neon Ember | Warm Sand | #EA580C (terracotta) |
+| Soft Lavender | Morning Lilac | #7C3AED (violet) |
+| Arctic Mint | Spring Mint | #059669 (emerald) |
+| Slate Minimal | Clean Slate | #4F46E5 (indigo) |
+
+**Color Reference**: See `images_context_input/palettes-light.html` for full specifications
+
+#### 4.2 Theme UI Parity
+**Current**: Selecting Dark mode shows theme palette options; selecting Light mode shows nothing
+**Expected**: Selecting Light mode should show the 5 light theme palettes using the SAME UI component as dark mode (reuse existing code)
+
+---
+
+### Category 5: Remove Deprecated UI
+
+#### 5.1 Remove Edit Patterns from Live Tabs
+**Current**: Live Tabs panel has an "Edit Patterns" link/section
+**Expected**: Remove the Edit Patterns link and section entirely from Live Tabs. This functionality exists on the Settings page and the link only navigates there anyway.
+
+---
+
+## Non-Goals (v5)
+
+- New features beyond bug fixes
+- Export/import functionality
 - Cross-device sync
-- Export/import vault data
-- Chrome tab groups integration
-- Multiple workspaces
-- Tab preview thumbnails
-- Analytics or usage tracking
+- Additional dark themes
+- Breaking API changes
 
 ---
 
 ## Success Criteria
 
-- Live Tabs panel correctly displays all open browser tabs
-- Theme switching works instantly with no flash
-- All text readable in all themes (contrast ratio >= 4.5:1)
-- 50 tabs shutdown in < 2 seconds
-- 500+ tabs in vault loads without lag
-- Zero data loss across restarts
-- Home tabs never accidentally vaulted
-- Keyboard fully accessible
+- [ ] Manually closing a home tab works normally (no vault)
+- [ ] Removing a home tab clears its pattern from storage
+- [ ] Restored tabs don't re-enter history when closed
+- [ ] No duplicate URLs in history
+- [ ] History is collapsed by default
+- [ ] History is at bottom of Vault, accordions upward
+- [ ] Vault items use icon buttons (Restore, Copy, Delete)
+- [ ] Vault groups use icon buttons (Restore, Rename, Copy, Delete)
+- [ ] Move Up/Down buttons removed from vault groups
+- [ ] Copy button copies URL(s) to clipboard, shows feedback
+- [ ] Drag-and-drop updates UI immediately
+- [ ] 5 light themes available when Light mode selected
+- [ ] Light/Dark theme selectors use same UI component
+- [ ] Edit Patterns removed from Live Tabs panel
+- [ ] All existing functionality preserved
 
 ---
 
-## File Structure
+## Technical Notes
+
+### Copy to Clipboard
+Use the Clipboard API:
+```javascript
+await navigator.clipboard.writeText(urlOrUrls);
+showToast('Copied to clipboard');
+```
+
+### Icon Buttons
+Use Unicode symbols (not emoji):
+- Open/Restore: ↗ (U+2197) or ⎋ (U+238B)
+- Copy: ⧉ (U+29C9) or use SVG
+- Delete: ✕ (U+2715)
+- Rename: ✎ (U+270E)
+
+### Theme Reuse
+The `getDarkThemes()` pattern should be mirrored with `getLightThemes()`:
+```javascript
+function getLightThemes() {
+  return Object.entries(THEMES)
+    .filter(([, theme]) => theme.type === 'light')
+    .map(([key, theme]) => ({ key, ...theme }));
+}
+```
+
+---
+
+## File Structure Impact
 
 ```
-chrome_tab_shutdown/
-├── manifest.json           # Update name to "Tab Goblin"
-├── src/
-│   ├── sidepanel/
-│   │   ├── sidepanel.html  # Update title, remove emojis
-│   │   ├── sidepanel.css   # Theme system, header changes
-│   │   └── sidepanel.js    # Bug fix, theme logic
-│   ├── background/
-│   │   └── service-worker.js
-│   ├── common/
-│   │   ├── storage.js
-│   │   ├── home-tabs.js
-│   │   ├── settings.js     # Add theme settings
-│   │   └── themes.js       # NEW: Theme definitions
-│   └── assets/
-├── documentation/          # Update all docs
-├── archive/               # Archived v1/v2 docs
-├── PRD.md                 # This file
-├── TICKETS.md             # Implementation tickets
-├── PROMPT.md              # Ralph Loop instructions
-└── CLAUDE.md              # AI assistant instructions
+src/
+├── common/
+│   ├── themes.js        # Add light theme definitions
+│   └── home-tabs.js     # Fix pattern cleanup on removal
+├── sidepanel/
+│   ├── sidepanel.js     # Fix copy, drag-drop, history, home tabs, remove edit patterns
+│   └── sidepanel.css    # Add light theme CSS, icon button styles
+└── background/
+    └── service-worker.js # History duplicate prevention, home tab close handling
 ```
+
+---
+
+## References
+
+- **Light Palette Specs**: `images_context_input/palettes-light.html`
+- **Code Review**: `context_items/opus-cursor-review.md`
+- **v4 PRD (archived)**: `archive/PRD-v4-2026-02-22.md`
+- **v4 TICKETS (archived)**: `archive/TICKETS-v4-2026-02-22.md`
