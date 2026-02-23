@@ -1,7 +1,7 @@
 // Tab Goblin - Background Service Worker
 // Handles shutdown and restore operations
 
-importScripts('../common/storage.js', '../common/home-tabs.js', '../common/url-utils.js', '../common/history.js');
+importScripts('../common/url-utils.js', '../common/storage.js', '../common/home-tabs.js', '../common/history.js');
 
 // Track tabs being closed by our extension (to distinguish from manual closes)
 const tabsBeingClosedByExtension = new Set();
@@ -233,6 +233,7 @@ chrome.commands.onCommand.addListener(async (command) => {
 
 /**
  * Shutdown the current active tab via keyboard shortcut
+ * Appends to existing "Quick Vault - {date}" group if one exists for today
  */
 async function shutdownCurrentTab() {
   try {
@@ -244,7 +245,18 @@ async function shutdownCurrentTab() {
     if (HomeTabs.isHomeTabSync(activeTab.url, homePatterns)) return;
 
     const groupName = `Quick Vault - ${new Date().toLocaleDateString()}`;
-    await VaultStorage.addGroup(groupName, [extractTabData(activeTab)]);
+    const tabData = [extractTabData(activeTab)];
+
+    // Check for existing group with today's name and append, otherwise create new
+    const vault = await VaultStorage.getVault();
+    const existingGroup = vault.groups.find(g => g.name === groupName);
+
+    if (existingGroup) {
+      await VaultStorage.addTabsToGroup(existingGroup.id, tabData);
+    } else {
+      await VaultStorage.addGroup(groupName, tabData);
+    }
+
     await closeTabsByExtension([activeTab.id]);
   } catch (error) {
     console.error('Error in shutdownCurrentTab:', error);
@@ -557,7 +569,8 @@ async function restoreTabs(groupId, tabIds) {
       return { success: false, error: 'Group not found' };
     }
 
-    const tabsToRestore = group.tabs.filter(t => new Set(tabIds).has(t.id));
+    const tabIdSet = new Set(tabIds);
+    const tabsToRestore = group.tabs.filter(t => tabIdSet.has(t.id));
     const firstTab = await openTabs(tabsToRestore);
 
     await VaultStorage.removeTabsFromGroup(groupId, tabIds);
@@ -588,8 +601,9 @@ async function duplicateTabs(groupId, tabIds = null) {
       return { success: false, error: 'Group not found' };
     }
 
-    const tabsToDuplicate = tabIds
-      ? group.tabs.filter(t => new Set(tabIds).has(t.id))
+    const tabIdSet = tabIds ? new Set(tabIds) : null;
+    const tabsToDuplicate = tabIdSet
+      ? group.tabs.filter(t => tabIdSet.has(t.id))
       : group.tabs;
 
     await openTabs(tabsToDuplicate);

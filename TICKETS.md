@@ -9,7 +9,7 @@ Each ticket includes a **Completion Promise** — the concrete condition to veri
 
 ## Phase 1: Export Feature
 
-### TG6-001: Create Import/Export Module
+### TG6-001: Create Import/Export Module [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 1.1, 1.3
@@ -46,7 +46,7 @@ Each ticket includes a **Completion Promise** — the concrete condition to veri
 
 ---
 
-### TG6-002: Implement Export Vault Function
+### TG6-002: Implement Export Vault Function [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 1.1, 1.2
@@ -73,7 +73,7 @@ Each ticket includes a **Completion Promise** — the concrete condition to veri
 
 ---
 
-### TG6-003: Add Export UI to Settings
+### TG6-003: Add Export UI to Settings [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 1.2
@@ -99,7 +99,7 @@ Each ticket includes a **Completion Promise** — the concrete condition to veri
 
 ## Phase 2: Import Feature
 
-### TG6-004: Implement Import Parser
+### TG6-004: Implement Import Parser [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 1.3, 1.5
@@ -131,7 +131,7 @@ Each ticket includes a **Completion Promise** — the concrete condition to veri
 
 ---
 
-### TG6-005: Implement Import to Vault
+### TG6-005: Implement Import to Vault [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 1.4, 1.5
@@ -156,7 +156,7 @@ Each ticket includes a **Completion Promise** — the concrete condition to veri
 
 ---
 
-### TG6-006: Add Import UI to Settings
+### TG6-006: Add Import UI to Settings [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 1.4
@@ -196,7 +196,7 @@ This will add to your existing vault
 
 ---
 
-### TG6-007: Import Error Handling
+### TG6-007: Import Error Handling [DONE]
 
 **Priority:** MEDIUM
 **PRD Reference:** Section 1.5
@@ -223,7 +223,7 @@ This will add to your existing vault
 
 ## Phase 3: Keyboard Shortcut
 
-### TG6-008: Add Commands to Manifest
+### TG6-008: Add Commands to Manifest [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 2.1
@@ -260,7 +260,7 @@ This will add to your existing vault
 
 ---
 
-### TG6-009: Add Shortcut Display to Settings
+### TG6-009: Add Shortcut Display to Settings [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 2.2
@@ -293,7 +293,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 
 ---
 
-### TG6-010: Add Configure Shortcut Link
+### TG6-010: Add Configure Shortcut Link [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 2.3
@@ -315,7 +315,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 
 ## Phase 4: Polish and Testing
 
-### TG6-011: Settings Section Ordering
+### TG6-011: Settings Section Ordering [DONE]
 
 **Priority:** MEDIUM
 **PRD Reference:** UI Specifications
@@ -340,7 +340,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 
 ---
 
-### TG6-012: Import/Export Round-Trip Test
+### TG6-012: Import/Export Round-Trip Test [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 1.3
@@ -369,7 +369,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 
 ---
 
-### TG6-013: Cross-Browser Import Test
+### TG6-013: Cross-Browser Import Test [DONE]
 
 **Priority:** MEDIUM
 **PRD Reference:** Section 1.3
@@ -395,7 +395,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 
 ---
 
-### TG6-014: Shortcut Functionality Test
+### TG6-014: Shortcut Functionality Test [DONE]
 
 **Priority:** HIGH
 **PRD Reference:** Section 2.1
@@ -416,7 +416,7 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 
 ---
 
-### TG6-015: Regression Testing
+### TG6-015: Regression Testing [DONE]
 
 **Priority:** HIGH
 

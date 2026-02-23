@@ -87,18 +87,34 @@ async function removeHomePattern(pattern) {
 // Maximum number of patterns allowed
 const MAX_PATTERNS = 100;
 
+// Maximum number of wildcards allowed in a pattern to prevent ReDoS
+const MAX_WILDCARDS = 5;
+
 /**
  * Convert a wildcard pattern to a RegExp
- * Supports * as a wildcard that matches any characters
- * Collapses consecutive wildcards for efficiency (***  becomes single .*)
+ * Supports glob-like wildcards:
+ * - ** matches any characters (including /)
+ * - * matches any characters except /
+ * Limits wildcards to prevent ReDoS attacks
  * @param {string} pattern
  * @returns {RegExp}
  */
 function patternToRegex(pattern) {
+  // Count wildcards and limit to prevent ReDoS
+  const wildcardCount = (pattern.match(/\*/g) || []).length;
+  if (wildcardCount > MAX_WILDCARDS) {
+    // Too many wildcards - fall back to exact match
+    const escaped = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('^' + escaped + '$', 'i');
+  }
+
   // Escape special regex characters except *
   const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-  // Replace consecutive * with single .* for efficient regex
-  const regexStr = '^' + escaped.replace(/\*+/g, '.*') + '$';
+  // Replace ** with a placeholder, then * with [^/]*, then restore **
+  // This allows ** to match anything (like .*) while * matches single segments
+  const withDoubleStars = escaped.replace(/\*\*+/g, '\x00DOUBLESTAR\x00');
+  const withSingleStars = withDoubleStars.replace(/\*/g, '[^/]*');
+  const regexStr = '^' + withSingleStars.replace(/\x00DOUBLESTAR\x00/g, '.*') + '$';
   return new RegExp(regexStr, 'i');
 }
 
@@ -205,6 +221,43 @@ async function trackHomeInstance(tabInfo) {
 }
 
 /**
+ * Batch add or update multiple home tab instances
+ * More efficient than calling trackHomeInstance in a loop
+ * @param {Array<Object>} tabInfos - Array of { url, title, favIconUrl }
+ * @returns {Promise<void>}
+ */
+async function trackManyHomeInstances(tabInfos) {
+  if (!tabInfos || tabInfos.length === 0) return;
+
+  const instances = await getHomeInstances();
+  const now = Date.now();
+
+  // Build a map for quick lookup
+  const instanceMap = new Map(instances.map((inst, idx) => [inst.url, idx]));
+
+  for (const tabInfo of tabInfos) {
+    if (!tabInfo.url) continue;
+
+    const instanceData = {
+      url: tabInfo.url,
+      title: tabInfo.title || 'Untitled',
+      favIconUrl: tabInfo.favIconUrl || '',
+      lastSeen: now
+    };
+
+    const existingIndex = instanceMap.get(tabInfo.url);
+    if (existingIndex !== undefined) {
+      instances[existingIndex] = instanceData;
+    } else {
+      instanceMap.set(tabInfo.url, instances.length);
+      instances.push(instanceData);
+    }
+  }
+
+  await saveHomeInstances(instances);
+}
+
+/**
  * Remove a home tab instance by URL
  * @param {string} url
  * @returns {Promise<void>}
@@ -244,6 +297,7 @@ const HomeTabs = {
   getHomeInstances,
   saveHomeInstances,
   trackHomeInstance,
+  trackManyHomeInstances,
   removeHomeInstance,
   cleanupOrphanedInstances
 };
