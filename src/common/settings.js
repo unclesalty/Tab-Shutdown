@@ -3,6 +3,33 @@
 
 const SETTINGS_KEY = 'settings';
 
+// Concurrency lock for read-modify-write operations
+let _settingsLock = null;
+
+/**
+ * Execute an operation with exclusive access to settings storage
+ * Prevents race conditions in read-modify-write operations
+ * @param {Function} operation - Async function to execute
+ * @returns {Promise} Result of the operation
+ */
+async function withSettingsLock(operation) {
+  // Wait for any existing lock to release
+  while (_settingsLock) {
+    await _settingsLock;
+  }
+
+  // Create a new lock
+  let resolve;
+  _settingsLock = new Promise(r => { resolve = r; });
+
+  try {
+    return await operation();
+  } finally {
+    resolve();
+    _settingsLock = null;
+  }
+}
+
 const DEFAULT_SETTINGS = {
   skipShutdownAllConfirm: false,
   skipLargeRestoreConfirm: false,
@@ -27,11 +54,11 @@ async function getSettings() {
 }
 
 /**
- * Save settings
+ * Save settings (internal, no lock)
  * @param {Object} settings
  * @returns {Promise<void>}
  */
-async function saveSettings(settings) {
+async function _saveSettings(settings) {
   try {
     await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
   } catch (error) {
@@ -41,15 +68,28 @@ async function saveSettings(settings) {
 }
 
 /**
+ * Save settings with lock protection
+ * @param {Object} settings
+ * @returns {Promise<void>}
+ */
+async function saveSettings(settings) {
+  return withSettingsLock(async () => {
+    await _saveSettings(settings);
+  });
+}
+
+/**
  * Update a single setting
  * @param {string} key
  * @param {any} value
  * @returns {Promise<void>}
  */
 async function updateSetting(key, value) {
-  const settings = await getSettings();
-  settings[key] = value;
-  await saveSettings(settings);
+  return withSettingsLock(async () => {
+    const settings = await getSettings();
+    settings[key] = value;
+    await _saveSettings(settings);
+  });
 }
 
 /**

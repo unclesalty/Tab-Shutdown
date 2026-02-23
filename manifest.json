@@ -26,6 +26,13 @@
     "service_worker": "src/background/service-worker.js"
   },
   "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+G",
+        "mac": "Command+Shift+G"
+      },
+      "description": "Open Tab Goblin"
+    },
     "shutdown-current-tab": {
       "suggested_key": {
         "default": "Alt+Shift+V"

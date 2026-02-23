@@ -1,6 +1,6 @@
 # Tab Goblin
 
-**Status:** v2 Complete | v3 In Development
+**Status:** v6 Complete
 
 A Chrome extension that fully closes tabs to reclaim RAM/CPU while preserving them in an organized vault for later restoration.
 
@@ -25,33 +25,43 @@ Unlike tab suspenders or discarding features, Tab Goblin **actually closes tabs*
 - **Restore & Copy** — Restore tabs (removes from vault) or open copies (keeps in vault)
 - **Tab Navigation** — Click vault tabs to navigate to open tabs, auto-navigate on restore
 - **Drag-and-Drop** — Move tabs between vault groups
-- **Keyboard Shortcuts** — Quick vault with `Alt+Shift+V` (current tab) or `Alt+Shift+A` (all tabs)
+- **Keyboard Shortcuts** — Toggle side panel (`Ctrl+Shift+G` / `Cmd+Shift+G`), vault current tab, vault all
+- **Import/Export** — Backup vault to HTML bookmark file, import Chrome/Firefox bookmarks
+- **Theme System** — Light/Dark/System modes with 5 color palettes each
+- **History** — Track recently closed tabs
 - **Persistent Storage** — Vault survives browser restarts and extension updates
 - **Side Panel UI** — Persistent panel that stays open while you browse
 
-## Roadmap
+## Version History
 
-### v1 (Complete)
-Core functionality: vault/restore tabs, home tab protection, search, keyboard shortcuts, group management.
+### v6 (Current)
+- **Import/Export** — Backup vault as Netscape Bookmark HTML, import from Chrome/Firefox/Edge
+- **Keyboard Shortcut** — `Ctrl+Shift+G` / `Cmd+Shift+G` to toggle side panel
+- **OS-Specific Display** — Settings shows shortcuts with correct modifier for your OS
 
-### v2 (Complete)
-UI/UX improvements:
-- **Side Panel** — Persistent panel using chrome.sidePanel (replaces popup)
-- **Tab-Based Navigation** — Tabs for Vault, Live Tabs, Settings
-- **Unified Display** — Live tabs shown in accordion style matching vault
+### v5
+- **Light Mode Themes** — 5 light palettes matching dark themes
+- **Vault UI Improvements** — Icon buttons, copy to clipboard, drag-drop fixes
+- **History Fixes** — Duplicate prevention, collapsed default, bottom position
+
+### v4
+- **Architecture Refactor** — Shared modules extracted to `src/common/`
+- **Concurrency Protection** — Storage locking to prevent data corruption
+- **Accessibility** — ARIA attributes, custom dialogs
+
+### v3
+- **Theme System** — Light/Dark/System modes with 5 dark palettes
+- **Tab Navigation** — Click vault tabs to navigate, auto-navigate on restore
+
+### v2
+- **Side Panel** — Persistent panel using chrome.sidePanel
+- **Tab-Based Navigation** — Vault, Live Tabs, Settings tabs
 - **Drag-and-Drop** — Move tabs between groups
-- **Accessibility** — Keyboard navigation, screen reader support
 
-### v3 (In Development)
-Theme system, navigation, and refinements:
-- **Bug Fix** — Live Tabs panel not displaying open tabs
-- **Theme System** — Light/Dark/System/Custom modes
-- **5 Dark Palettes** — Midnight Glass, Neon Ember, Soft Lavender, Arctic Mint, Slate Minimal
-- **Tab Navigation** — Click active vault tabs to navigate, auto-navigate on restore
-- **Simplified Header** — Clean, minimal design
-- **Remove Emojis** — Prepare for custom iconography
+### v1
+- Core vault/restore functionality, home tab protection, search, keyboard shortcuts
 
-See [TICKETS.md](TICKETS.md) for detailed implementation plan.
+See [TICKETS.md](TICKETS.md) for current implementation details.
 
 ## Installation
 
@@ -122,6 +132,7 @@ In the **Vault** tab, type in the search box to filter tabs across all groups by
 
 | Shortcut | Action |
 |----------|--------|
+| `Ctrl+Shift+G` (Win/Linux) / `Cmd+Shift+G` (Mac) | Toggle side panel |
 | `Alt+Shift+V` | Vault the current tab |
 | `Alt+Shift+A` | Vault all tabs (except home tabs) |
 
@@ -129,6 +140,8 @@ To customize shortcuts:
 1. Go to `chrome://extensions/shortcuts`
 2. Find "Tab Goblin"
 3. Set your preferred key combinations
+
+Or open Settings in Tab Goblin and click "Configure in Chrome Settings".
 
 ## How It's Built
 
@@ -145,7 +158,7 @@ Tab Goblin is a Chrome Extension built with:
 
 ```
 chrome_tab_shutdown/
-├── manifest.json           # Extension manifest (permissions, shortcuts)
+├── manifest.json           # Extension manifest (permissions, shortcuts, commands)
 ├── src/
 │   ├── assets/
 │   │   ├── icon16.png      # Toolbar icon (16x16)
@@ -153,10 +166,15 @@ chrome_tab_shutdown/
 │   ├── background/
 │   │   └── service-worker.js   # Background operations (shutdown/restore)
 │   ├── common/
-│   │   ├── storage.js      # Vault data CRUD operations
+│   │   ├── storage.js      # Vault storage with concurrency locking
 │   │   ├── home-tabs.js    # Home tab pattern matching
-│   │   ├── settings.js     # User preferences
-│   │   └── themes.js       # Theme definitions (v3)
+│   │   ├── settings.js     # User preferences with locking
+│   │   ├── history.js      # History storage operations
+│   │   ├── themes.js       # Theme definitions
+│   │   ├── dialog.js       # Unified dialog system
+│   │   ├── url-utils.js    # URL validation and utilities
+│   │   ├── ui-helpers.js   # UI utility functions
+│   │   └── import-export.js # Netscape bookmark import/export
 │   └── sidepanel/
 │       ├── sidepanel.html  # Side panel UI structure
 │       ├── sidepanel.css   # Side panel styling + themes

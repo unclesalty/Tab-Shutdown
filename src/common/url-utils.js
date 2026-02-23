@@ -92,10 +92,21 @@ const UrlUtils = {
     if (lower.startsWith('file:')) return false;
     if (lower.startsWith('vbscript:')) return false;
     return true;
+  },
+
+  /**
+   * Generate a unique ID (timestamp + random string)
+   * @returns {string}
+   */
+  generateId() {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2, 11);
   }
 };
 
-// Export for use in service worker (importScripts)
-if (typeof self !== 'undefined' && typeof self.UrlUtils === 'undefined') {
+// Export for use in both window (sidepanel) and service worker contexts
+if (typeof window !== 'undefined') {
+  window.UrlUtils = UrlUtils;
+}
+if (typeof self !== 'undefined') {
   self.UrlUtils = UrlUtils;
 }

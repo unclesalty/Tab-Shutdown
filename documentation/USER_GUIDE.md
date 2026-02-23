@@ -5,14 +5,16 @@ Complete guide to using Tab Goblin effectively.
 ## Table of Contents
 
 1. [Concepts](#concepts)
-2. [The Popup Interface](#the-popup-interface)
+2. [The Side Panel Interface](#the-side-panel-interface)
 3. [Vaulting Tabs](#vaulting-tabs)
 4. [Restoring Tabs](#restoring-tabs)
 5. [Managing Groups](#managing-groups)
 6. [Home Tabs](#home-tabs)
 7. [Searching](#searching)
 8. [Keyboard Shortcuts](#keyboard-shortcuts)
-9. [Tips & Best Practices](#tips--best-practices)
+9. [Themes](#themes)
+10. [Import & Export](#import--export)
+11. [Tips & Best Practices](#tips--best-practices)
 
 ---
 
@@ -46,36 +48,42 @@ Home tabs are **protected** tabs that are never vaulted:
 
 ---
 
-## The Popup Interface
+## The Side Panel Interface
 
-Click the Tab Goblin icon to open the main interface.
+Click the Tab Goblin icon (or press `Ctrl+Shift+G` / `Cmd+Shift+G`) to open the side panel.
 
-### Header
+### Navigation Tabs
 
-- **Tab Goblin** — Extension name
-- **X tabs open** — Current count of open browser tabs
+The side panel has three main tabs:
+- **Vault** — Your saved tab groups
+- **Live Tabs** — Currently open tabs grouped by domain
+- **Settings** — Theme, keyboard shortcut, import/export, home tabs
 
-### Action Bar
+### Vault Tab
 
-- **Shutdown All** — Vault all tabs (except home tabs)
-- **Select Tabs** — Choose specific tabs to vault
-- **...** — Shutdown by domain (group tabs by website)
-
-### Vault Groups
-
-The main area shows your vaulted tab groups:
+The Vault shows your saved tab groups:
 - Click a group header to expand/collapse
 - **Restore** — Opens all tabs and removes group from vault
 - **Copy** — Opens all tabs but keeps them in vault
-- **⋮** — Menu with Rename, Delete, Move options
+- **Menu (...)** — Rename, Delete options
+- **Search** — Type to filter tabs across all groups
 
-### Search
+### Live Tabs Tab
 
-Type in the search box to filter tabs across all groups.
+Shows all currently open tabs organized by domain:
+- Click domain header to expand/collapse
+- Select tabs using checkboxes
+- **Vault Selected** — Vault checked tabs
+- **Vault All** — Vault all tabs except home tabs
+- Home tabs are marked and protected
 
-### Footer
+### Settings Tab
 
-- **Settings** — Configure home tab patterns
+Configure Tab Goblin:
+- **Appearance** — Theme mode (Light/Dark/System) and color palette
+- **Keyboard Shortcut** — View current shortcut, configure in Chrome
+- **Data** — Export vault, Import bookmarks
+- **Home Tabs** — Manage protected tab patterns
 
 ---
 
@@ -281,11 +289,23 @@ Search looks at:
 
 | Shortcut | Action |
 |----------|--------|
+| `Ctrl+Shift+G` (Win/Linux) / `Cmd+Shift+G` (Mac) | Toggle side panel |
 | `Alt+Shift+V` | Vault current tab |
 | `Alt+Shift+A` | Vault all tabs |
 
+### Viewing Current Shortcuts
+
+1. Open Tab Goblin side panel
+2. Go to **Settings** tab
+3. See "Keyboard Shortcut" section with your current shortcut
+
 ### Customizing Shortcuts
 
+**From Tab Goblin:**
+1. Go to **Settings** tab
+2. Click "Configure in Chrome Settings"
+
+**From Chrome:**
 1. Go to `chrome://extensions/shortcuts`
 2. Find "Tab Goblin"
 3. Click the pencil icon next to a command
@@ -298,6 +318,79 @@ If a shortcut doesn't work:
 - Check if another extension uses it
 - Some system shortcuts take priority
 - Try a different combination
+
+---
+
+## Themes
+
+Tab Goblin includes a full theme system with light and dark modes.
+
+### Theme Modes
+
+| Mode | Behavior |
+|------|----------|
+| **System** | Follows your OS light/dark preference |
+| **Light** | Always use light theme |
+| **Dark** | Always use dark theme |
+
+### Color Palettes
+
+Each mode has 5 color palettes:
+
+**Dark Palettes:**
+- Midnight Glass (blue accents)
+- Neon Ember (orange/red accents)
+- Soft Lavender (purple accents)
+- Arctic Mint (teal accents)
+- Slate Minimal (neutral gray)
+
+**Light Palettes:**
+- Daylight Glass, Sunrise Ember, Morning Lavender, Ocean Mint, Paper Minimal
+
+### Changing Themes
+
+1. Open Tab Goblin side panel
+2. Go to **Settings** tab
+3. Under "Appearance", select your theme mode
+4. Click a color palette to apply it
+
+---
+
+## Import & Export
+
+Tab Goblin can export your vault and import bookmarks from other browsers.
+
+### Exporting Your Vault
+
+1. Open Tab Goblin side panel
+2. Go to **Settings** tab
+3. Under "Data", click **Export Vault**
+4. A file downloads: `tab-goblin-export-YYYY-MM-DD.html`
+
+The export file:
+- Uses Netscape Bookmark format (same as Chrome)
+- Can be imported into Chrome, Firefox, or Edge bookmarks
+- Can be imported back into Tab Goblin
+
+### Importing Bookmarks
+
+1. Open Tab Goblin side panel
+2. Go to **Settings** tab
+3. Under "Data", click **Import Bookmarks**
+4. Select an HTML bookmark file
+5. Review the confirmation dialog showing groups and tabs found
+6. Click **Import** to add to your vault
+
+**Supported Sources:**
+- Chrome bookmark exports
+- Firefox bookmark exports
+- Edge bookmark exports
+- Previous Tab Goblin exports
+
+**Import Behavior:**
+- Adds to your existing vault (nothing replaced or deleted)
+- Duplicate URLs are automatically skipped
+- Nested folders are flattened with "Parent > Child" naming
 
 ---
 
@@ -343,11 +436,8 @@ While researching a topic:
 
 - Vault data persists across browser restarts
 - Vault survives extension updates
-- For extra safety, periodically export:
-  ```javascript
-  // In browser console
-  chrome.storage.local.get('vault', d => console.log(JSON.stringify(d)))
-  ```
+- For extra safety, use **Export Vault** in Settings to create backup files
+- Keep exports in cloud storage (Google Drive, Dropbox) for extra protection
 
 ---
 

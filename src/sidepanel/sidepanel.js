@@ -13,6 +13,9 @@ let homeTabsCollapsed = false;        // For Home Tabs section
 // Debounce timer for search
 let searchDebounceTimer = null;
 
+// Debounce timer for tab change events
+let tabChangeDebounceTimer = null;
+
 // Current search query (shared across panels)
 let currentSearchQuery = '';
 
@@ -96,8 +99,8 @@ async function init() {
 
 // Set up listeners for tab changes to update active indicators
 function setupTabListeners() {
-  // Update cache and re-render vault when tabs change
-  const handleTabChange = async () => {
+  // Update cache and re-render when tabs change (debounced)
+  const handleTabChangeImmediate = async () => {
     await updateOpenTabsCache();
     await updateLiveTabCount();
     // Re-render current panel to reflect tab changes
@@ -112,6 +115,14 @@ function setupTabListeners() {
       await renderLiveTabsPanel();
       updateSelectedCount();
     }
+  };
+
+  // Debounced version to prevent rapid re-renders when many tabs change at once
+  const handleTabChange = () => {
+    if (tabChangeDebounceTimer) {
+      clearTimeout(tabChangeDebounceTimer);
+    }
+    tabChangeDebounceTimer = setTimeout(handleTabChangeImmediate, 150);
   };
 
   chrome.tabs.onCreated.addListener(handleTabChange);
@@ -367,6 +378,7 @@ async function renderCurrentPanel() {
     case 'settings':
       await renderHomePatterns();
       await initThemeSelector();
+      await updateShortcutDisplay();
       break;
   }
 }
@@ -380,13 +392,14 @@ async function renderLiveTabsPanel() {
   // Build a map of open tabs by URL for quick lookup
   const openTabsByUrl = new Map();
   const regularTabs = [];
+  const homeTabsToTrack = [];
 
   for (const tab of tabs) {
     if (UrlUtils.isSkippableUrl(tab.url)) continue;
 
     if (HomeTabs.isHomeTabSync(tab.url, homePatterns)) {
-      // Track this as a home tab instance (stores in chrome.storage)
-      await HomeTabs.trackHomeInstance({
+      // Collect home tabs for batch tracking
+      homeTabsToTrack.push({
         url: tab.url,
         title: tab.title,
         favIconUrl: tab.favIconUrl
@@ -395,6 +408,11 @@ async function renderLiveTabsPanel() {
     } else if (matchesSearch(tab, searchQuery)) {
       regularTabs.push(tab);
     }
+  }
+
+  // Batch track all home tab instances (single storage read/write)
+  if (homeTabsToTrack.length > 0) {
+    await HomeTabs.trackManyHomeInstances(homeTabsToTrack);
   }
 
   // Get all saved home tab instances (includes closed tabs) and filter by search
@@ -482,7 +500,7 @@ function createHomeTabItem(instance, openTab, homePatterns) {
 
   const unprotectBtn = document.createElement('button');
   unprotectBtn.className = 'unprotect-btn';
-  unprotectBtn.textContent = '\u2716'; // X mark
+  unprotectBtn.textContent = '\u2715'; // ✕ Multiplication X (matches other close buttons)
   unprotectBtn.title = 'Remove from Home Tabs';
   unprotectBtn.setAttribute('aria-label', 'Remove from Home Tabs');
   unprotectBtn.addEventListener('click', async (e) => {
@@ -720,7 +738,7 @@ function createDomainTabItem(tab, groupCard) {
   // Vault button - save tab to vault and close it
   const vaultBtn = document.createElement('button');
   vaultBtn.className = 'tab-action-btn vault-btn';
-  vaultBtn.textContent = '\u{1F4E5}'; // Inbox tray icon
+  vaultBtn.textContent = '\u2913'; // ⤓ Downwards arrow to bar (matches History vault)
   vaultBtn.title = 'Vault this tab (save and close)';
   vaultBtn.setAttribute('aria-label', 'Vault this tab');
   vaultBtn.addEventListener('click', async (e) => {
@@ -793,10 +811,11 @@ function updateDomainGroupCheckbox(groupCard) {
 
 // Vault all tabs from a specific domain
 async function vaultDomainTabs(domain, tabs) {
-  const tabIds = tabs.map(t => t.id).filter(id => selectedTabIds.has(id));
+  // Vault ALL tabs from the domain, not just selected ones
+  const tabIds = tabs.map(t => t.id);
 
   if (tabIds.length === 0) {
-    showToast('No tabs selected from this domain', 'info');
+    showToast('No tabs to vault from this domain', 'info');
     return;
   }
 
@@ -998,8 +1017,11 @@ async function renderHistorySection() {
   footerEl.classList.remove('hidden');
   section.classList.remove('empty');
 
+  // Sort by closedAt descending (newest at top, oldest at bottom)
+  const sortedTabs = [...history.tabs].sort((a, b) => b.closedAt - a.closedAt);
+
   // Render history items
-  for (const tab of history.tabs) {
+  for (const tab of sortedTabs) {
     container.appendChild(createHistoryItem(tab));
   }
 
@@ -1034,7 +1056,7 @@ function createHistoryItem(tab) {
   // Restore button
   const restoreBtn = document.createElement('button');
   restoreBtn.className = 'tab-action-btn restore-btn';
-  restoreBtn.textContent = '\u21B3'; // Arrow
+  restoreBtn.textContent = '\u2197'; // ↗ North East Arrow (matches Vault)
   restoreBtn.title = 'Restore tab';
   restoreBtn.setAttribute('aria-label', 'Restore tab');
   restoreBtn.addEventListener('click', async (e) => {
@@ -1391,11 +1413,6 @@ function setupEventListeners() {
   // Shutdown all button
   document.getElementById('vaultAllBtn').addEventListener('click', shutdownAll);
 
-  // Confirmation dialog buttons
-  document.getElementById('confirmCancelBtn').addEventListener('click', hideConfirmDialog);
-  document.getElementById('confirmVaultBtn').addEventListener('click', onConfirmShutdown);
-  document.querySelector('.confirm-dialog-backdrop').addEventListener('click', hideConfirmDialog);
-
   // Live Tabs panel
   document.getElementById('vaultSelectedBtn').addEventListener('click', vaultSelectedTabs);
 
@@ -1436,6 +1453,14 @@ function setupEventListeners() {
     }, 200);
   });
 
+  // Import/Export buttons
+  document.getElementById('exportVaultBtn').addEventListener('click', exportVault);
+  document.getElementById('importBookmarksBtn').addEventListener('click', triggerImportFilePicker);
+  document.getElementById('importFileInput').addEventListener('change', handleImportFile);
+
+  // Keyboard shortcut configuration
+  document.getElementById('configureShortcutBtn').addEventListener('click', openShortcutConfig);
+
   // Keyboard navigation for tab bar
   document.querySelector('.tab-bar').addEventListener('keydown', handleTabBarKeydown);
 
@@ -1465,13 +1490,6 @@ function handleGlobalKeydown(e) {
     const menu = document.querySelector('.group-menu-dropdown');
     if (menu) {
       menu.remove();
-      return;
-    }
-
-    // Close confirmation dialog
-    const dialog = document.getElementById('confirmDialog');
-    if (!dialog.classList.contains('hidden')) {
-      hideConfirmDialog();
       return;
     }
   }
@@ -1539,7 +1557,7 @@ async function vaultSelectedTabs() {
   const tabCount = selectedTabIds.size;
 
   // Show confirmation dialog
-  const confirmed = await showModalConfirm(
+  const confirmed = await Dialog.showModalConfirm(
     'Vault Selected Tabs',
     `Vault ${tabCount} selected ${pluralizeTabs(tabCount)}? They will be closed and saved to your vault.`,
     'Vault'
@@ -1788,160 +1806,34 @@ async function shutdownAll() {
 
   // Always show dialog for 10+ tabs, or if not skipped
   if (!skipConfirm || tabsToClose.length >= 10) {
-    showConfirmDialog(tabsToClose.length, homeTabs.length);
+    await showVaultAllConfirmDialog(tabsToClose.length, homeTabs.length);
   } else {
     await executeShutdownAll();
   }
 }
 
-// Show the confirmation dialog
-function showConfirmDialog(tabCount, homeTabCount) {
-  const dialog = document.getElementById('confirmDialog');
-  const tabsCountEl = document.getElementById('confirmTabsCount');
-  const homeCountEl = document.getElementById('confirmHomeCount');
-  const dontShowCheckbox = document.getElementById('dontShowAgainCheckbox');
+// Show the Vault All confirmation dialog using the unified modal
+async function showVaultAllConfirmDialog(tabCount, homeTabCount) {
+  const message = `You are about to vault ${tabCount} ${pluralizeTabs(tabCount)}.`;
+  const subMessage = homeTabCount > 0
+    ? `${homeTabCount} home ${pluralizeTabs(homeTabCount)} will be protected.`
+    : undefined;
 
-  tabsCountEl.textContent = `You are about to vault ${tabCount} ${pluralizeTabs(tabCount)}.`;
-
-  if (homeTabCount > 0) {
-    homeCountEl.textContent = `${homeTabCount} home ${pluralizeTabs(homeTabCount)} will be protected.`;
-    homeCountEl.classList.remove('hidden');
-  } else {
-    homeCountEl.textContent = '';
-    homeCountEl.classList.add('hidden');
-  }
-
-  // Reset checkbox
-  dontShowCheckbox.checked = false;
-
-  // Show dialog
-  dialog.classList.remove('hidden');
-}
-
-// Hide the confirmation dialog
-function hideConfirmDialog() {
-  const dialog = document.getElementById('confirmDialog');
-  dialog.classList.add('hidden');
-}
-
-/**
- * Show a modal dialog (confirm or prompt)
- * @param {Object} options - Dialog options
- * @param {string} options.title - Dialog title
- * @param {string} options.message - Message to display
- * @param {string} [options.confirmText='OK'] - Text for confirm button
- * @param {boolean} [options.showInput=false] - Whether to show input field
- * @param {string} [options.defaultValue=''] - Default input value (if showInput)
- * @returns {Promise<boolean|string|null>} - boolean for confirm, string/null for prompt
- */
-function showModal(options) {
-  const { title, message, confirmText = 'OK', showInput = false, defaultValue = '' } = options;
-
-  return new Promise((resolve) => {
-    const dialog = document.getElementById('modalDialog');
-    const titleEl = document.getElementById('modalDialogTitle');
-    const messageEl = document.getElementById('modalDialogMessage');
-    const inputEl = document.getElementById('modalDialogInput');
-    const confirmBtn = document.getElementById('modalDialogConfirm');
-    const cancelBtn = document.getElementById('modalDialogCancel');
-
-    titleEl.textContent = title;
-    messageEl.textContent = message;
-    confirmBtn.textContent = confirmText;
-
-    if (showInput) {
-      inputEl.classList.remove('hidden');
-      inputEl.value = defaultValue;
-    } else {
-      inputEl.classList.add('hidden');
-    }
-
-    const cleanup = () => {
-      dialog.classList.add('hidden');
-      confirmBtn.removeEventListener('click', onConfirm);
-      cancelBtn.removeEventListener('click', onCancel);
-      if (showInput) {
-        inputEl.removeEventListener('keydown', onInputKeydown);
-      }
-      document.removeEventListener('keydown', onKeydown);
-    };
-
-    const onConfirm = () => {
-      cleanup();
-      resolve(showInput ? inputEl.value : true);
-    };
-
-    const onCancel = () => {
-      cleanup();
-      resolve(showInput ? null : false);
-    };
-
-    const onInputKeydown = (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        onConfirm();
-      }
-    };
-
-    const onKeydown = (e) => {
-      if (e.key === 'Escape') {
-        onCancel();
-      } else if (!showInput && e.key === 'Enter') {
-        onConfirm();
-      }
-    };
-
-    confirmBtn.addEventListener('click', onConfirm);
-    cancelBtn.addEventListener('click', onCancel);
-    if (showInput) {
-      inputEl.addEventListener('keydown', onInputKeydown);
-    }
-    document.addEventListener('keydown', onKeydown);
-
-    dialog.classList.remove('hidden');
-
-    if (showInput) {
-      inputEl.focus();
-      inputEl.select();
-    } else {
-      confirmBtn.focus();
-    }
+  const result = await Dialog.showModal({
+    title: 'Confirm Vault All',
+    message,
+    subMessage,
+    confirmText: 'Vault Tabs',
+    checkboxText: "Don't show this again (except for 10+ tabs)"
   });
-}
 
-/**
- * Show a themed confirmation dialog
- * @param {string} title - Dialog title
- * @param {string} message - Message to display
- * @param {string} confirmText - Text for confirm button (default: "OK")
- * @returns {Promise<boolean>} - True if confirmed, false if cancelled
- */
-function showModalConfirm(title, message, confirmText = 'OK') {
-  return showModal({ title, message, confirmText });
-}
-
-/**
- * Show a themed prompt dialog
- * @param {string} title - Dialog title
- * @param {string} message - Message to display
- * @param {string} defaultValue - Default input value
- * @returns {Promise<string|null>} - Input value if confirmed, null if cancelled
- */
-function showModalPrompt(title, message, defaultValue = '') {
-  return showModal({ title, message, showInput: true, defaultValue });
-}
-
-// Handle confirm button click
-async function onConfirmShutdown() {
-  const dontShowCheckbox = document.getElementById('dontShowAgainCheckbox');
-
-  // Save preference if checked
-  if (dontShowCheckbox.checked) {
-    await Settings.updateSetting('skipShutdownAllConfirm', true);
+  if (result.confirmed) {
+    // Save preference if checkbox was checked
+    if (result.checkboxChecked) {
+      await Settings.updateSetting('skipShutdownAllConfirm', true);
+    }
+    await executeShutdownAll();
   }
-
-  hideConfirmDialog();
-  await executeShutdownAll();
 }
 
 // Execute the actual shutdown
@@ -1986,7 +1878,7 @@ async function restoreGroup(groupId) {
   if (group.tabs.length >= 10) {
     const skipConfirm = await Settings.getSetting('skipLargeRestoreConfirm');
     if (!skipConfirm) {
-      const confirmed = await showModalConfirm(
+      const confirmed = await Dialog.showModalConfirm(
         'Restore Group',
         `Restore ${group.tabs.length} ${pluralizeTabs(group.tabs.length)}? This will open them all in new tabs.`,
         'Restore'
@@ -2063,7 +1955,7 @@ async function deleteVaultTab(groupId, tabId) {
 
 // Show rename dialog
 async function showRenameDialog(group) {
-  const newName = await showModalPrompt('Rename Group', 'Enter new group name:', group.name);
+  const newName = await Dialog.showModalPrompt('Rename Group', 'Enter new group name:', group.name);
   if (newName && newName.trim() && newName !== group.name) {
     await renameGroup(group.id, newName.trim());
   }
@@ -2078,7 +1970,7 @@ async function renameGroup(groupId, newName) {
 
 // Delete a group
 async function deleteGroup(group) {
-  const confirmed = await showModalConfirm(
+  const confirmed = await Dialog.showModalConfirm(
     'Delete Group',
     `Delete "${group.name}" and all ${group.tabs.length} ${pluralizeTabs(group.tabs.length)} in it?`,
     'Delete'
@@ -2091,6 +1983,166 @@ async function deleteGroup(group) {
 }
 
 // ============================================
+// KEYBOARD SHORTCUT FUNCTIONS
+// ============================================
+
+// Detect if running on macOS
+function isMacOS() {
+  return /mac/i.test(navigator.platform);
+}
+
+// Format a shortcut string for OS-appropriate display
+function formatShortcutForOS(shortcut) {
+  if (!shortcut) return null;
+
+  if (isMacOS()) {
+    return shortcut.replace(/Ctrl|Command/gi, 'Cmd');
+  }
+  return shortcut.replace(/Command/gi, 'Ctrl');
+}
+
+// Get the current configured shortcut
+async function getCurrentShortcut() {
+  try {
+    const commands = await chrome.commands.getAll();
+    const actionCommand = commands.find(cmd => cmd.name === '_execute_action');
+    return actionCommand?.shortcut || null;
+  } catch {
+    return null;
+  }
+}
+
+// Update the shortcut display in settings
+async function updateShortcutDisplay() {
+  const shortcutKeysEl = document.getElementById('shortcutKeys');
+  if (!shortcutKeysEl) return;
+
+  // Clear existing content
+  clearContainer(shortcutKeysEl);
+
+  const shortcut = await getCurrentShortcut();
+
+  if (!shortcut) {
+    const notSetSpan = document.createElement('span');
+    notSetSpan.className = 'shortcut-not-set';
+    notSetSpan.textContent = 'Not set';
+    shortcutKeysEl.appendChild(notSetSpan);
+    return;
+  }
+
+  const formatted = formatShortcutForOS(shortcut);
+  const keys = formatted.split('+');
+
+  // Create key elements using safe DOM methods
+  keys.forEach((key, index) => {
+    if (index > 0) {
+      const plusSpan = document.createElement('span');
+      plusSpan.className = 'shortcut-plus';
+      plusSpan.textContent = '+';
+      shortcutKeysEl.appendChild(plusSpan);
+    }
+
+    const keySpan = document.createElement('span');
+    keySpan.className = 'shortcut-key';
+    keySpan.textContent = key;
+    shortcutKeysEl.appendChild(keySpan);
+  });
+}
+
+// Open Chrome's keyboard shortcut configuration page
+async function openShortcutConfig() {
+  try {
+    await chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
+  } catch (error) {
+    showToast('Could not open shortcut settings', 'error');
+  }
+}
+
+// ============================================
+// IMPORT/EXPORT FUNCTIONS
+// ============================================
+
+// Export the vault as a Netscape Bookmark HTML file
+async function exportVault() {
+  try {
+    const vault = await VaultStorage.getVault();
+
+    if (vault.groups.length === 0) {
+      showToast('Vault is empty', 'info');
+      return;
+    }
+
+    const success = ImportExport.downloadExport(vault);
+    if (success) {
+      showToast('Vault exported successfully', 'success');
+    } else {
+      showToast('Failed to export vault', 'error');
+    }
+  } catch {
+    showToast('Failed to export vault', 'error');
+  }
+}
+
+// Handle import file selection
+async function handleImportFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  // Reset the input so the same file can be selected again
+  event.target.value = '';
+
+  try {
+    const content = await file.text();
+    const result = ImportExport.parseNetscapeBookmarks(content);
+
+    if (result.error) {
+      showToast(result.error, 'error');
+      return;
+    }
+
+    if (result.groups.length === 0) {
+      showToast('No bookmarks found in file', 'error');
+      return;
+    }
+
+    const stats = ImportExport.getImportStats(result.groups);
+
+    // Show confirmation dialog
+    const groupLabel = stats.groupCount === 1 ? 'group' : 'groups';
+    const tabLabel = stats.tabCount === 1 ? 'tab' : 'tabs';
+    const confirmed = await Dialog.showModalConfirm(
+      'Import Bookmarks?',
+      `Found ${stats.groupCount} ${groupLabel} with ${stats.tabCount} ${tabLabel}.\n\nThis will add to your existing vault (nothing will be replaced or deleted).`,
+      'Import'
+    );
+
+    if (!confirmed) return;
+
+    // Perform import
+    const importResult = await ImportExport.importToVault(result.groups);
+
+    // Show result toast
+    let message = `Imported ${importResult.groupsAdded} group${importResult.groupsAdded !== 1 ? 's' : ''}`;
+    if (importResult.duplicatesSkipped > 0) {
+      message += ` (${importResult.duplicatesSkipped} duplicate${importResult.duplicatesSkipped !== 1 ? 's' : ''} skipped)`;
+    }
+    showToast(message, 'success');
+
+    // Refresh vault display if on vault tab
+    if (currentTab === 'vault') {
+      await renderVaultGroups();
+    }
+  } catch {
+    showToast('Failed to read file', 'error');
+  }
+}
+
+// Trigger import file picker
+function triggerImportFilePicker() {
+  document.getElementById('importFileInput').click();
+}
+
+// ============================================
 // DRAG AND DROP HANDLERS
 // ============================================
 
@@ -2099,6 +2151,11 @@ let draggedItem = null;
 let draggedTabId = null;
 let draggedGroupId = null;
 let isDraggingGroup = false; // true when dragging a whole group to reorder
+
+// Clear all drag-related CSS classes (DRY helper)
+function clearDragStyles() {
+  clearDragStyles();
+}
 
 // Handle drag start on a tab item
 function handleDragStart(e) {
@@ -2135,9 +2192,7 @@ function handleDragEnd(e) {
   }
 
   // Clear all drag-over states
-  document.querySelectorAll('.drag-over, .drop-target, .drop-above, .drop-below').forEach(el => {
-    el.classList.remove('drag-over', 'drop-target', 'drop-above', 'drop-below');
-  });
+  clearDragStyles();
 
   draggedItem = null;
   draggedTabId = null;
@@ -2252,82 +2307,36 @@ async function handleGroupDrop(e) {
 
 // Move a tab to a specific position within a group (before another tab)
 async function moveTabToPosition(sourceGroupId, tabId, targetGroupId, beforeTabId) {
-  const vault = await VaultStorage.getVault();
+  const result = await VaultStorage.moveTab(sourceGroupId, tabId, targetGroupId, beforeTabId);
 
-  // Find source group and tab
-  const sourceGroup = vault.groups.find(g => g.id === sourceGroupId);
-  const targetGroup = vault.groups.find(g => g.id === targetGroupId);
+  if (!result.success) return;
 
-  if (!sourceGroup || !targetGroup) return;
-
-  // Find and remove tab from source
-  const tabIndex = sourceGroup.tabs.findIndex(t => t.id === tabId);
-  if (tabIndex === -1) return;
-
-  const [tab] = sourceGroup.tabs.splice(tabIndex, 1);
-
-  // Find position to insert in target
-  const beforeIndex = targetGroup.tabs.findIndex(t => t.id === beforeTabId);
-
-  if (beforeIndex === -1) {
-    // Insert at end
-    targetGroup.tabs.push(tab);
-  } else {
-    // Insert before the target tab
-    targetGroup.tabs.splice(beforeIndex, 0, tab);
-  }
-
-  // Remove source group if now empty
-  if (sourceGroup.tabs.length === 0) {
-    const sourceIndex = vault.groups.findIndex(g => g.id === sourceGroupId);
-    if (sourceIndex !== -1) {
-      vault.groups.splice(sourceIndex, 1);
-      expandedVaultGroups.delete(sourceGroupId);
-    }
+  // Clean up expanded state if source group was removed
+  if (result.sourceRemoved) {
+    expandedVaultGroups.delete(sourceGroupId);
   }
 
   // Expand target group to show the moved tab
   expandedVaultGroups.add(targetGroupId);
 
-  // Save and re-render
-  await VaultStorage.saveVault(vault);
   await renderVaultGroups();
   showToast('Tab moved', 'success');
 }
 
 // Move a tab to a different group (at the end)
 async function moveTabToGroup(sourceGroupId, tabId, targetGroupId) {
-  const vault = await VaultStorage.getVault();
+  const result = await VaultStorage.moveTab(sourceGroupId, tabId, targetGroupId, null);
 
-  // Find groups
-  const sourceGroup = vault.groups.find(g => g.id === sourceGroupId);
-  const targetGroup = vault.groups.find(g => g.id === targetGroupId);
+  if (!result.success) return;
 
-  if (!sourceGroup || !targetGroup) return;
-
-  // Find and remove tab from source
-  const tabIndex = sourceGroup.tabs.findIndex(t => t.id === tabId);
-  if (tabIndex === -1) return;
-
-  const [tab] = sourceGroup.tabs.splice(tabIndex, 1);
-
-  // Add to target group at the end
-  targetGroup.tabs.push(tab);
-
-  // Remove source group if now empty
-  if (sourceGroup.tabs.length === 0) {
-    const sourceIndex = vault.groups.findIndex(g => g.id === sourceGroupId);
-    if (sourceIndex !== -1) {
-      vault.groups.splice(sourceIndex, 1);
-      expandedVaultGroups.delete(sourceGroupId);
-    }
+  // Clean up expanded state if source group was removed
+  if (result.sourceRemoved) {
+    expandedVaultGroups.delete(sourceGroupId);
   }
 
   // Expand target group to show the moved tab
   expandedVaultGroups.add(targetGroupId);
 
-  // Save and re-render
-  await VaultStorage.saveVault(vault);
   await renderVaultGroups();
   showToast('Tab moved', 'success');
 }
@@ -2359,9 +2368,7 @@ function handleGroupReorderDragEnd(e) {
     draggedItem.classList.remove('dragging-group');
   }
 
-  document.querySelectorAll('.drag-over, .drop-target, .drop-above, .drop-below').forEach(el => {
-    el.classList.remove('drag-over', 'drop-target', 'drop-above', 'drop-below');
-  });
+  clearDragStyles();
 
   draggedItem = null;
   draggedTabId = null;
@@ -2371,28 +2378,10 @@ function handleGroupReorderDragEnd(e) {
 
 // Reorder a group to a new position
 async function reorderGroup(sourceGroupId, targetGroupId, insertBefore) {
-  const vault = await VaultStorage.getVault();
+  const success = await VaultStorage.moveGroup(sourceGroupId, targetGroupId, insertBefore);
 
-  const sourceIndex = vault.groups.findIndex(g => g.id === sourceGroupId);
-  const targetIndex = vault.groups.findIndex(g => g.id === targetGroupId);
+  if (!success) return;
 
-  if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) return;
-
-  // Remove the source group
-  const [group] = vault.groups.splice(sourceIndex, 1);
-
-  // Calculate new index (accounting for removal)
-  let newIndex = targetIndex;
-  if (sourceIndex < targetIndex) {
-    newIndex = insertBefore ? targetIndex - 1 : targetIndex;
-  } else {
-    newIndex = insertBefore ? targetIndex : targetIndex + 1;
-  }
-
-  // Insert at new position
-  vault.groups.splice(newIndex, 0, group);
-
-  await VaultStorage.saveVault(vault);
   await renderVaultGroups();
   showToast('Group reordered', 'success');
 }
