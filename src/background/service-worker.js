@@ -293,10 +293,10 @@ async function handleMessage(message) {
       return await restoreTabs(message.groupId, message.tabIds);
 
     case 'duplicate-group':
-      return await duplicateGroup(message.groupId);
+      return await duplicateTabs(message.groupId, null, message.navigate);
 
     case 'duplicate-tabs':
-      return await duplicateTabs(message.groupId, message.tabIds);
+      return await duplicateTabs(message.groupId, message.tabIds, message.navigate);
 
     case 'get-domain-groups':
       return { success: true, domains: await getDomainGroups() };
@@ -309,6 +309,9 @@ async function handleMessage(message) {
 
     case 'close-to-history':
       return await closeTabToHistory(message.tabId);
+
+    case 'close-tabs-to-history':
+      return await closeTabsToHistory(message.tabIds);
 
     case 'get-history':
       return { success: true, history: await TabHistory.getHistory() };
@@ -348,6 +351,40 @@ async function closeTabToHistory(tabId) {
     return { success: true };
   } catch (error) {
     console.error('Error in closeTabToHistory:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Close multiple tabs and save them to history
+ * @param {number[]} tabIds - Chrome tab IDs
+ */
+async function closeTabsToHistory(tabIds) {
+  try {
+    if (!Array.isArray(tabIds) || tabIds.length === 0) {
+      return { success: false, error: 'Invalid tab IDs' };
+    }
+
+    const tabs = await Promise.all(
+      tabIds.map(id => chrome.tabs.get(id).catch(() => null))
+    );
+    const validTabs = tabs.filter(t => t !== null);
+
+    if (validTabs.length === 0) {
+      return { success: false, error: 'No valid tabs found' };
+    }
+
+    // Save all to history first
+    for (const tab of validTabs) {
+      await TabHistory.addToHistory(extractTabData(tab));
+    }
+
+    // Close the tabs (mark as extension-closed so onRemoved doesn't double-save)
+    await closeTabsByExtension(validTabs.map(t => t.id));
+
+    return { success: true, count: validTabs.length };
+  } catch (error) {
+    console.error('Error in closeTabsToHistory:', error);
     return { success: false, error: error.message };
   }
 }
@@ -590,11 +627,12 @@ async function restoreTabs(groupId, tabIds) {
 }
 
 /**
- * Open tabs from a group WITHOUT removing from vault (duplicate)
+ * Open tabs from a group WITHOUT removing from vault
  * @param {string} groupId
- * @param {string[]} [tabIds] - Optional: specific tab IDs to duplicate (all if omitted)
+ * @param {string[]} [tabIds] - Optional: specific tab IDs to open (all if omitted)
+ * @param {boolean} [navigate] - If true, navigate to the first opened tab
  */
-async function duplicateTabs(groupId, tabIds = null) {
+async function duplicateTabs(groupId, tabIds = null, navigate = false) {
   try {
     const group = await VaultStorage.getGroup(groupId);
     if (!group) {
@@ -602,23 +640,20 @@ async function duplicateTabs(groupId, tabIds = null) {
     }
 
     const tabIdSet = tabIds ? new Set(tabIds) : null;
-    const tabsToDuplicate = tabIdSet
+    const tabsToOpen = tabIdSet
       ? group.tabs.filter(t => tabIdSet.has(t.id))
       : group.tabs;
 
-    await openTabs(tabsToDuplicate);
+    const firstTab = await openTabs(tabsToOpen);
 
-    return { success: true, count: tabsToDuplicate.length };
+    if (navigate) {
+      await navigateToFirstTab(firstTab);
+    }
+
+    return { success: true, count: tabsToOpen.length };
   } catch (error) {
     console.error('Error in duplicateTabs:', error);
     return { success: false, error: error.message };
   }
 }
 
-/**
- * Open all tabs from a group WITHOUT removing from vault (duplicate)
- * @param {string} groupId
- */
-async function duplicateGroup(groupId) {
-  return duplicateTabs(groupId);
-}
