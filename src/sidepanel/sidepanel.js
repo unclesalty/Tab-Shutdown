@@ -5,8 +5,9 @@ document.addEventListener('DOMContentLoaded', init);
 // Track selected tabs for shutdown
 let selectedTabIds = new Set();
 
-// Track expanded state for accordions (persists across re-renders)
-let expandedDomainGroups = new Set(); // For Live Tabs panel
+// Track collapsed state for accordions (persists across re-renders)
+// Groups are expanded by default; this tracks which ones user has collapsed
+let collapsedDomainGroups = new Set(); // For Live Tabs panel
 let expandedVaultGroups = new Set();  // For Vault panel
 let homeTabsCollapsed = false;        // For Home Tabs section
 
@@ -133,6 +134,9 @@ function setupTabListeners() {
       handleTabChange();
     }
   });
+
+  // Update when active tab changes (user switches tabs manually)
+  chrome.tabs.onActivated.addListener(handleTabChange);
 }
 
 // Initialize theme from settings
@@ -330,6 +334,16 @@ function showPanel(tabName) {
   if (panel) {
     panel.classList.remove('hidden');
   }
+
+  // Home Tabs section persists across Live/Vault, hidden on Settings
+  const homeTabsSection = document.getElementById('homeTabsSection');
+  if (homeTabsSection) {
+    if (tabName === 'settings') {
+      homeTabsSection.classList.add('hidden');
+    } else {
+      homeTabsSection.classList.remove('hidden');
+    }
+  }
 }
 
 // Switch to a tab
@@ -393,15 +407,28 @@ async function renderLiveTabsPanel() {
   const viewMode = await Settings.getSetting('liveTabsView') || 'grouped';
   updateViewToggleUI(viewMode);
 
-  // Build a map of open tabs by URL for quick lookup
-  const openTabsByUrl = new Map();
+  // Get vault URLs to check for already-vaulted tabs
+  const vault = await VaultStorage.getVault();
+  const vaultedUrls = new Set();
+  for (const group of vault.groups) {
+    for (const tab of group.tabs) {
+      vaultedUrls.add(tab.url);
+    }
+  }
+
+  // Build maps for home tab matching
+  const openTabsByUrl = new Map();       // URL -> open tab (for exact matches)
+  const openTabsByPattern = new Map();   // pattern -> open tab (for wildcard matches)
   const regularTabs = [];
   const homeTabsToTrack = [];
 
   for (const tab of tabs) {
     if (UrlUtils.isSkippableUrl(tab.url)) continue;
 
-    if (HomeTabs.isHomeTabSync(tab.url, homePatterns)) {
+    // Find which pattern this tab matches (if any)
+    const matchingPattern = findMatchingPattern(tab.url, homePatterns);
+
+    if (matchingPattern) {
       // Collect home tabs for batch tracking
       homeTabsToTrack.push({
         url: tab.url,
@@ -409,6 +436,10 @@ async function renderLiveTabsPanel() {
         favIconUrl: tab.favIconUrl
       });
       openTabsByUrl.set(tab.url, tab);
+      // Track by pattern for wildcard support (keeps most recent/first match)
+      if (!openTabsByPattern.has(matchingPattern)) {
+        openTabsByPattern.set(matchingPattern, tab);
+      }
     } else if (matchesSearch(tab, searchQuery)) {
       regularTabs.push(tab);
     }
@@ -424,16 +455,33 @@ async function renderLiveTabsPanel() {
   const filteredInstances = homeInstances.filter(instance => matchesSearch(instance, searchQuery));
 
   // Render home tabs section with instances and open tab info
-  renderHomeTabsSection(filteredInstances, openTabsByUrl, homePatterns);
+  renderHomeTabsSection(filteredInstances, openTabsByUrl, openTabsByPattern, homePatterns);
 
   // Render regular tabs
-  renderOpenTabsList(regularTabs);
+  renderOpenTabsList(regularTabs, vaultedUrls);
+}
+
+// Find which pattern a URL matches (returns the pattern string or null)
+function findMatchingPattern(url, patterns) {
+  if (!url || !patterns || patterns.length === 0) return null;
+
+  for (const pattern of patterns) {
+    try {
+      if (HomeTabs.patternToRegex(pattern).test(url)) {
+        return pattern;
+      }
+    } catch (error) {
+      // Skip invalid patterns
+    }
+  }
+  return null;
 }
 
 // Render the Home Tabs section
 // instances: saved home tab instances (may be open or closed)
-// openTabsByUrl: Map of URL -> open tab object
-function renderHomeTabsSection(instances, openTabsByUrl, homePatterns) {
+// openTabsByUrl: Map of URL -> open tab object (exact matches)
+// openTabsByPattern: Map of pattern -> open tab object (for wildcard patterns)
+function renderHomeTabsSection(instances, openTabsByUrl, openTabsByPattern, homePatterns) {
   const section = document.getElementById('homeTabsSection');
   const header = document.getElementById('homeTabsHeader');
   const container = document.getElementById('homeTabsList');
@@ -448,10 +496,54 @@ function renderHomeTabsSection(instances, openTabsByUrl, homePatterns) {
     header.setAttribute('aria-expanded', 'true');
   }
 
-  clearContainer(container);
-  countEl.textContent = instances.length;
+  // Helper to check if a pattern is a wildcard pattern (contains *)
+  const isWildcardPattern = (pattern) => pattern && pattern.includes('*');
 
-  if (instances.length === 0) {
+  // Helper to check if an instance has an open tab (exact URL or same pattern)
+  const isInstanceOpen = (instance) => {
+    if (openTabsByUrl.has(instance.url)) return true;
+    const matchingPattern = findMatchingPattern(instance.url, homePatterns);
+    return matchingPattern && openTabsByPattern.has(matchingPattern);
+  };
+
+  // Helper to get the open tab for an instance
+  const getOpenTabForInstance = (instance) => {
+    const exactMatch = openTabsByUrl.get(instance.url);
+    if (exactMatch) return exactMatch;
+    const matchingPattern = findMatchingPattern(instance.url, homePatterns);
+    if (matchingPattern) return openTabsByPattern.get(matchingPattern);
+    return null;
+  };
+
+  // Consolidate instances that match the same wildcard pattern
+  // Keep one representative instance per wildcard pattern (most recently seen)
+  const consolidatedInstances = [];
+  const seenWildcardPatterns = new Set();
+
+  // Sort by lastSeen descending first so we keep the most recent
+  const sortedByRecent = [...instances].sort((a, b) => b.lastSeen - a.lastSeen);
+
+  for (const instance of sortedByRecent) {
+    const matchingPattern = findMatchingPattern(instance.url, homePatterns);
+
+    if (matchingPattern && isWildcardPattern(matchingPattern)) {
+      // Wildcard pattern - only keep one instance per pattern
+      if (!seenWildcardPatterns.has(matchingPattern)) {
+        seenWildcardPatterns.add(matchingPattern);
+        // Mark with the pattern for later reference
+        instance._matchedPattern = matchingPattern;
+        consolidatedInstances.push(instance);
+      }
+    } else {
+      // Exact URL pattern - keep all instances
+      consolidatedInstances.push(instance);
+    }
+  }
+
+  clearContainer(container);
+  countEl.textContent = consolidatedInstances.length;
+
+  if (consolidatedInstances.length === 0) {
     const emptyState = document.createElement('div');
     emptyState.className = 'home-tabs-empty';
     emptyState.textContent = 'No protected tabs';
@@ -459,17 +551,17 @@ function renderHomeTabsSection(instances, openTabsByUrl, homePatterns) {
     return;
   }
 
-  // Sort instances: open tabs first, then by lastSeen
-  const sortedInstances = [...instances].sort((a, b) => {
-    const aOpen = openTabsByUrl.has(a.url);
-    const bOpen = openTabsByUrl.has(b.url);
+  // Sort: open tabs first, then by lastSeen
+  const sortedInstances = [...consolidatedInstances].sort((a, b) => {
+    const aOpen = isInstanceOpen(a);
+    const bOpen = isInstanceOpen(b);
     if (aOpen && !bOpen) return -1;
     if (!aOpen && bOpen) return 1;
     return b.lastSeen - a.lastSeen;
   });
 
   for (const instance of sortedInstances) {
-    const openTab = openTabsByUrl.get(instance.url);
+    const openTab = getOpenTabForInstance(instance);
     container.appendChild(createHomeTabItem(instance, openTab, homePatterns));
   }
 }
@@ -488,8 +580,11 @@ function createHomeTabItem(instance, openTab, homePatterns) {
   }
 
   // Use openTab data if available (more current), fallback to instance
+  // For SPAs, show the current tab's info when it's at a different URL
   const favicon = createFavicon(openTab?.favIconUrl || instance.favIconUrl);
-  const info = createTabInfo(openTab?.title || instance.title, instance.url);
+  const displayUrl = isOpen ? openTab.url : instance.url;
+  const displayTitle = openTab?.title || instance.title;
+  const info = createTabInfo(displayTitle, displayUrl);
 
   // Status indicator
   const status = document.createElement('span');
@@ -571,7 +666,7 @@ async function removeTabFromHome(tabUrl, patterns) {
 }
 
 // Render the Open Tabs based on current view mode
-async function renderOpenTabsList(tabs) {
+async function renderOpenTabsList(tabs, vaultedUrls) {
   const container = document.getElementById('domainGroupsList');
   const countEl = document.getElementById('openTabsCount');
   const viewMode = await Settings.getSetting('liveTabsView') || 'grouped';
@@ -589,14 +684,14 @@ async function renderOpenTabsList(tabs) {
   }
 
   if (viewMode === 'grouped') {
-    renderGroupedView(tabs, container);
+    renderGroupedView(tabs, container, vaultedUrls);
   } else {
-    renderUngroupedView(tabs, container);
+    renderUngroupedView(tabs, container, vaultedUrls);
   }
 }
 
 // Render tabs grouped by domain (accordion style)
-function renderGroupedView(tabs, container) {
+function renderGroupedView(tabs, container, vaultedUrls) {
   // Group tabs by domain
   const domainGroups = UrlUtils.groupTabsByDomain(tabs);
 
@@ -608,12 +703,12 @@ function renderGroupedView(tabs, container) {
   // Create domain group cards
   for (const domain of sortedDomains) {
     const domainTabs = domainGroups[domain];
-    container.appendChild(createDomainGroupCard(domain, domainTabs));
+    container.appendChild(createDomainGroupCard(domain, domainTabs, vaultedUrls));
   }
 }
 
 // Render tabs in flat list sorted by domain
-function renderUngroupedView(tabs, container) {
+function renderUngroupedView(tabs, container, vaultedUrls) {
   // Sort tabs by domain, then by title
   const sorted = [...tabs].sort((a, b) => {
     const domainA = UrlUtils.getDomainFromUrl(a.url) || '';
@@ -624,16 +719,23 @@ function renderUngroupedView(tabs, container) {
   });
 
   for (const tab of sorted) {
-    container.appendChild(createUngroupedTabItem(tab));
+    container.appendChild(createUngroupedTabItem(tab, vaultedUrls));
   }
 }
 
 // Create a tab item for ungrouped view
-function createUngroupedTabItem(tab) {
+function createUngroupedTabItem(tab, vaultedUrls) {
   const domain = UrlUtils.getDomainFromUrl(tab.url) || 'Other';
+  const isVaulted = vaultedUrls && vaultedUrls.has(tab.url);
 
   const item = document.createElement('div');
   item.className = 'ungrouped-tab-item';
+  if (tab.active) {
+    item.classList.add('current-tab');
+  }
+  if (isVaulted) {
+    item.classList.add('already-vaulted');
+  }
   item.dataset.tabId = tab.id;
 
   // Checkbox for selection
@@ -738,13 +840,14 @@ function createUngroupedTabItem(tab) {
 }
 
 // Create a domain group card (accordion style)
-function createDomainGroupCard(domain, tabs) {
+function createDomainGroupCard(domain, tabs, vaultedUrls) {
   const card = document.createElement('div');
   card.className = 'domain-group-card';
   card.dataset.domain = domain;
 
-  // Restore expanded state if previously expanded OR if searching (to show matching results)
-  const shouldExpand = expandedDomainGroups.has(domain) || currentSearchQuery;
+  // Groups are expanded by default; only collapse if user manually collapsed
+  // Always expand when searching (to show matching results)
+  const shouldExpand = !collapsedDomainGroups.has(domain) || currentSearchQuery;
   if (shouldExpand) {
     card.classList.add('expanded');
   }
@@ -769,9 +872,12 @@ function createDomainGroupCard(domain, tabs) {
   groupCheckbox.title = 'Select all tabs in this domain';
   groupCheckbox.addEventListener('click', (e) => e.stopPropagation());
   groupCheckbox.addEventListener('change', (e) => {
+    // Capture checked state before loop - dispatched events call updateDomainGroupCheckbox
+    // which can modify groupCheckbox.checked before all iterations complete
+    const isChecked = groupCheckbox.checked;
     const tabCheckboxes = card.querySelectorAll('.domain-tab-checkbox');
     tabCheckboxes.forEach(cb => {
-      cb.checked = groupCheckbox.checked;
+      cb.checked = isChecked;
       cb.dispatchEvent(new Event('change'));
     });
     updateDomainGroupCheckbox(card);
@@ -795,21 +901,36 @@ function createDomainGroupCard(domain, tabs) {
   const actions = document.createElement('div');
   actions.className = 'domain-group-actions';
 
+  // Vault icon button
   const vaultBtn = document.createElement('button');
-  vaultBtn.className = 'btn btn-primary btn-small domain-vault-btn';
-  vaultBtn.textContent = 'Vault';
+  vaultBtn.className = 'tab-action-btn domain-action-btn vault-btn domain-vault-btn';
+  vaultBtn.textContent = '\u2913'; // ⤓ Downwards arrow to bar
   vaultBtn.title = 'Vault selected tabs from this domain';
   vaultBtn.disabled = true; // Disabled until tabs are selected
   vaultBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    // Only vault selected tabs from this domain
     const selectedInGroup = tabs.filter(t => selectedTabIds.has(t.id));
     if (selectedInGroup.length > 0) {
       await vaultDomainTabs(domain, selectedInGroup);
     }
   });
 
+  // Close icon button (close to history without vaulting)
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'tab-action-btn domain-action-btn close-btn domain-close-btn';
+  closeBtn.textContent = '\u2715'; // ✕ X mark
+  closeBtn.title = 'Close selected tabs to history';
+  closeBtn.disabled = true; // Disabled until tabs are selected
+  closeBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const selectedInGroup = tabs.filter(t => selectedTabIds.has(t.id));
+    if (selectedInGroup.length > 0) {
+      await closeGroupTabsToHistory(selectedInGroup);
+    }
+  });
+
   actions.appendChild(vaultBtn);
+  actions.appendChild(closeBtn);
 
   header.appendChild(expand);
   header.appendChild(groupCheckbox);
@@ -821,11 +942,11 @@ function createDomainGroupCard(domain, tabs) {
     card.classList.toggle('expanded');
     const isExpanded = card.classList.contains('expanded');
     header.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
-    // Track expanded state
+    // Track collapsed state (inverted - we track collapsed, not expanded)
     if (isExpanded) {
-      expandedDomainGroups.add(domain);
+      collapsedDomainGroups.delete(domain);
     } else {
-      expandedDomainGroups.delete(domain);
+      collapsedDomainGroups.add(domain);
     }
   };
 
@@ -842,7 +963,7 @@ function createDomainGroupCard(domain, tabs) {
   tabsContainer.className = 'domain-group-tabs';
 
   tabs.forEach(tab => {
-    const tabItem = createDomainTabItem(tab, card);
+    const tabItem = createDomainTabItem(tab, card, vaultedUrls);
     tabsContainer.appendChild(tabItem);
   });
 
@@ -853,9 +974,17 @@ function createDomainGroupCard(domain, tabs) {
 }
 
 // Create a tab item within a domain group
-function createDomainTabItem(tab, groupCard) {
+function createDomainTabItem(tab, groupCard, vaultedUrls) {
+  const isVaulted = vaultedUrls && vaultedUrls.has(tab.url);
+
   const item = document.createElement('div');
   item.className = 'domain-tab-item';
+  if (tab.active) {
+    item.classList.add('current-tab');
+  }
+  if (isVaulted) {
+    item.classList.add('already-vaulted');
+  }
   item.dataset.tabId = tab.id;
 
   const checkbox = document.createElement('input');
@@ -955,14 +1084,16 @@ function updateDomainGroupCheckbox(groupCard) {
   groupCheckbox.indeterminate = someChecked && !allChecked;
 }
 
-// Update domain vault button disabled state based on selection
+// Update domain action buttons disabled state based on selection
 function updateDomainVaultButton(groupCard) {
   const vaultBtn = groupCard.querySelector('.domain-vault-btn');
-  if (!vaultBtn) return;
+  const closeBtn = groupCard.querySelector('.domain-close-btn');
 
   const anySelected = Array.from(groupCard.querySelectorAll('.domain-tab-checkbox'))
     .some(cb => cb.checked);
-  vaultBtn.disabled = !anySelected;
+
+  if (vaultBtn) vaultBtn.disabled = !anySelected;
+  if (closeBtn) closeBtn.disabled = !anySelected;
 }
 
 // Vault all tabs from a specific domain
@@ -1060,6 +1191,28 @@ async function closeTabToHistory(tabId) {
   }
 }
 
+// Close multiple tabs to history (for group close action)
+async function closeGroupTabsToHistory(tabs) {
+  if (tabs.length === 0) return;
+
+  try {
+    const tabIds = tabs.map(t => t.id);
+    const response = await chrome.runtime.sendMessage({
+      action: 'close-tabs-to-history',
+      tabIds: tabIds
+    });
+
+    if (response.success) {
+      showToast(`Closed ${response.count} ${pluralizeTabs(response.count)} to history`, 'info');
+      await refreshLivePanel();
+    } else {
+      showToast('Error: ' + (response.error || 'Unknown error'), 'error');
+    }
+  } catch (error) {
+    showToast('Error closing tabs', 'error');
+  }
+}
+
 // Check and show onboarding tips
 async function checkOnboarding() {
   const onboardingComplete = await Settings.getSetting('onboardingComplete');
@@ -1101,7 +1254,23 @@ function showOnboardingTip() {
 // Update the live tab count in the status bar
 async function updateLiveTabCount() {
   const tabs = await chrome.tabs.query({});
+  const homePatterns = await HomeTabs.getHomePatterns();
+
+  // Count protected tabs (home tabs + skippable URLs)
+  let protectedCount = 0;
+  for (const tab of tabs) {
+    if (UrlUtils.isSkippableUrl(tab.url) || HomeTabs.isHomeTabSync(tab.url, homePatterns)) {
+      protectedCount++;
+    }
+  }
+
   document.getElementById('liveTabCount').textContent = tabs.length;
+  const protectedEl = document.getElementById('protectedTabCount');
+  if (protectedCount > 0) {
+    protectedEl.textContent = ` (${protectedCount} protected)`;
+  } else {
+    protectedEl.textContent = '';
+  }
 }
 
 // Render vault groups in the vault panel
@@ -2389,7 +2558,10 @@ let isDraggingGroup = false; // true when dragging a whole group to reorder
 
 // Clear all drag-related CSS classes (DRY helper)
 function clearDragStyles() {
-  clearDragStyles();
+  document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+  document.querySelectorAll('.drop-above').forEach(el => el.classList.remove('drop-above'));
+  document.querySelectorAll('.drop-below').forEach(el => el.classList.remove('drop-below'));
 }
 
 // Handle drag start on a tab item

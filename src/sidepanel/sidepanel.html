@@ -52,19 +52,19 @@
 
     <!-- Main Content -->
     <main class="main-content">
+      <!-- Home Tabs Section (persists across Live/Vault) -->
+      <section id="homeTabsSection" class="home-tabs-section" aria-labelledby="homeTabsTitle">
+        <button class="home-tabs-header" id="homeTabsHeader" aria-expanded="true" aria-controls="homeTabsList">
+          <span class="home-tabs-icon" aria-hidden="true"></span>
+          <span class="home-tabs-title" id="homeTabsTitle">Home Tabs</span>
+          <span class="home-tabs-count" id="homeTabsCount" aria-label="protected tabs">0</span>
+          <span class="home-tabs-expand" aria-hidden="true">&#9660;</span>
+        </button>
+        <div id="homeTabsList" class="home-tabs-list" role="list" aria-label="Protected home tabs"></div>
+      </section>
+
       <!-- Live Tabs Panel -->
       <div id="livePanel" class="panel" role="tabpanel" aria-labelledby="tab-live">
-        <!-- Home Tabs Section -->
-        <section id="homeTabsSection" class="home-tabs-section" aria-labelledby="homeTabsTitle">
-          <button class="home-tabs-header" id="homeTabsHeader" aria-expanded="true" aria-controls="homeTabsList">
-            <span class="home-tabs-icon" aria-hidden="true"></span>
-            <span class="home-tabs-title" id="homeTabsTitle">Home Tabs</span>
-            <span class="home-tabs-count" id="homeTabsCount" aria-label="protected tabs">0</span>
-            <span class="home-tabs-expand" aria-hidden="true">&#9660;</span>
-          </button>
-          <div id="homeTabsList" class="home-tabs-list" role="list" aria-label="Protected home tabs"></div>
-        </section>
-
         <!-- Open Tabs Section (grouped by domain) -->
         <div class="open-tabs-section">
           <div class="open-tabs-header">
@@ -238,7 +238,7 @@
 
     <!-- Status Bar -->
     <footer class="status-bar">
-      <span id="liveTabCount">0</span> tabs open
+      <span id="liveTabCount">0</span> tabs open<span id="protectedTabCount" class="protected-count"></span>
     </footer>
   </div>
 

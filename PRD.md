@@ -1,310 +1,321 @@
-# PRD: Tab Goblin v7 — Live Tabs View Improvements
+# PRD: Tab Goblin v8 — Modular Architecture Refactor
 
 ## Overview
 
-**Tab Goblin** is a Chrome extension that solves RAM/CPU drain from too many tabs while preserving them as workflow aids. Tabs are either live (open) or vaulted (fully closed and saved). No suspension, no halfway — closed is closed.
+**Tab Goblin** is a Chrome extension that solves RAM/CPU drain from too many tabs while preserving them as workflow aids. Tabs are either live (open) or vaulted (fully closed and saved).
 
-## v7 Goals
+## v8 Goals
 
-This release improves the **Live Tabs panel** with better view options and fixes selection/vault button behavior:
+This release focuses on **architectural improvements** to make the codebase more maintainable, testable, and easier to extend:
 
-1. **View Toggle** — Switch between grouped and ungrouped views of live tabs
-2. **Selection Behavior** — Fix group checkbox and vault button interactions
-3. **Button State Management** — Disable vault buttons until tabs are selected
+1. **Break up the monolith** — Split `sidepanel.js` (2,794 lines) into focused modules
+2. **Separation of concerns** — UI rendering, state management, and event handling in separate layers
+3. **Consistent patterns** — Establish patterns for future feature development
 
 ---
 
 ## Problem Statement
 
-**View Flexibility:**
-- Users may prefer to see all tabs in a flat list rather than grouped by domain
-- The grouped view works well for domain-focused workflows but not for scanning all tabs quickly
-- No way to toggle between views
+### Current Architecture Issues
 
-**Selection & Vault Button Issues:**
-- Domain "Vault" button behavior is unclear when nothing is selected
-- "Vault Selected" button at the bottom is always enabled even when no tabs are selected
-- Users expect disabled buttons to indicate "nothing to do"
+**`sidepanel.js` is a 2,794-line monolith containing:**
+- 79 functions with mixed responsibilities
+- Theme management
+- Tab navigation/state
+- Live Tabs panel rendering
+- Vault panel rendering
+- Settings panel rendering
+- Event handlers
+- Search functionality
+- Import/export
+- Drag-and-drop
+- 12+ global variables for state
+
+**Pain Points:**
+- Hard to find relevant code for a specific feature
+- Changes in one area risk breaking unrelated features
+- Testing individual components is difficult
+- New developers face steep learning curve
+- Code duplication across similar UI components
+
+### What's Working Well
+
+**`src/common/` modules are well-structured:**
+- `storage.js` (368 lines) — Vault storage with concurrency locking
+- `home-tabs.js` (311 lines) — Home tab patterns
+- `settings.js` (120 lines) — User settings
+- `history.js` (256 lines) — History storage
+- `themes.js` (133 lines) — Theme definitions
+- `dialog.js` (162 lines) — Unified dialog system
+- `ui-helpers.js` (92 lines) — Shared UI utilities
+- `url-utils.js` (112 lines) — URL processing
+- `import-export.js` (285 lines) — Bookmark import/export
+
+**These modules demonstrate the right patterns:**
+- Single responsibility
+- Clear API surface
+- ~100-350 lines each
+- Reusable across contexts
 
 ---
 
-## Feature 1: Live Tabs View Toggle
+## Proposed Module Structure
 
-### 1.1 View Options
+### New `src/sidepanel/` Directory Structure
 
-**Requirement:** Add toggle to switch between grouped and ungrouped views.
+```
+src/sidepanel/
+├── sidepanel.html
+├── sidepanel.css
+├── sidepanel.js              # Entry point, initialization, event setup
+├── modules/
+│   ├── state.js              # Centralized state management
+│   ├── navigation.js         # Tab bar, panel switching, routing
+│   ├── search.js             # Global search across panels
+│   ├── theme-ui.js           # Theme selector UI (uses common/themes.js)
+│   │
+│   ├── live-tabs/
+│   │   ├── index.js          # Live Tabs panel coordinator
+│   │   ├── home-tabs-ui.js   # Home Tabs section rendering
+│   │   ├── open-tabs-ui.js   # Open Tabs list (grouped/ungrouped)
+│   │   ├── tab-item.js       # Tab item component
+│   │   └── view-toggle.js    # View mode toggle
+│   │
+│   ├── vault/
+│   │   ├── index.js          # Vault panel coordinator
+│   │   ├── group-card.js     # Vault group card component
+│   │   ├── tab-item.js       # Vault tab item component
+│   │   ├── history-ui.js     # History section rendering
+│   │   └── drag-drop.js      # Drag-and-drop handling
+│   │
+│   └── settings/
+│       ├── index.js          # Settings panel coordinator
+│       ├── theme-settings.js # Theme mode/palette selection
+│       ├── shortcut-ui.js    # Keyboard shortcut display
+│       ├── data-settings.js  # Import/export UI
+│       └── patterns-ui.js    # Home tab patterns management
+```
 
-**View Modes:**
-| Mode | Description |
-|------|-------------|
-| **Grouped** (default) | Tabs organized in collapsible domain accordions |
-| **Ungrouped** | Flat list of all tabs, sorted by domain for visual grouping |
+### Module Responsibilities
 
-### 1.2 Toggle UI
+#### Core Modules
 
-**Location:** Live Tabs panel, above the tabs list (below search)
+**`state.js`** — Centralized State Management
+```javascript
+// Single source of truth for UI state
+const State = {
+  selectedTabIds: new Set(),
+  collapsedDomainGroups: new Set(),
+  expandedVaultGroups: new Set(),
+  homeTabsCollapsed: false,
+  currentTab: 'live',
+  currentSearchQuery: '',
+  openTabsCache: [],
 
-**Implementation:**
-- Two icon buttons in a toggle group (radio behavior)
-- Icons: Grid/grouped icon + List icon
-- Visual indicator for active state
-- Persist preference to settings
+  // State change notifications
+  subscribe(event, callback) { },
+  emit(event, data) { },
 
-**HTML Structure:**
+  // Getters/setters that trigger updates
+  setSelectedTabs(ids) { },
+  toggleDomainGroup(domain) { },
+  // ...
+};
+```
+
+**`navigation.js`** — Panel Navigation
+```javascript
+const Navigation = {
+  init() { },
+  switchToTab(tabName) { },
+  updateTabBarUI() { },
+  showPanel(tabName) { },
+  handleKeydown(e) { },
+};
+```
+
+**`search.js`** — Global Search
+```javascript
+const Search = {
+  init() { },
+  handleSearch(query) { },
+  renderResults() { },
+  clearSearch() { },
+};
+```
+
+#### Panel Modules
+
+**`live-tabs/index.js`** — Live Tabs Panel Coordinator
+```javascript
+const LiveTabsPanel = {
+  render() { },
+  refresh() { },
+  updateTabCount() { },
+  handleVaultSelected() { },
+  handleVaultAll() { },
+};
+```
+
+**`vault/index.js`** — Vault Panel Coordinator
+```javascript
+const VaultPanel = {
+  render() { },
+  refresh() { },
+  renderGroups() { },
+  renderHistory() { },
+};
+```
+
+---
+
+## Refactoring Strategy
+
+### Phase 1: State Extraction
+1. Create `state.js` with all global variables
+2. Add subscription system for state changes
+3. Update `sidepanel.js` to use State module
+4. No visible changes to users
+
+### Phase 2: Navigation Extraction
+1. Create `navigation.js` with tab switching logic
+2. Extract `showPanel`, `switchToTab`, `updateTabBarUI`
+3. Wire up State subscriptions for panel changes
+4. No visible changes to users
+
+### Phase 3: Live Tabs Modularization
+1. Extract Home Tabs section to `home-tabs-ui.js`
+2. Extract Open Tabs list to `open-tabs-ui.js`
+3. Extract tab item component to `tab-item.js`
+4. Create `live-tabs/index.js` coordinator
+5. No visible changes to users
+
+### Phase 4: Vault Modularization
+1. Extract group card to `group-card.js`
+2. Extract tab item to `vault/tab-item.js`
+3. Extract drag-drop to `drag-drop.js`
+4. Extract history to `history-ui.js`
+5. Create `vault/index.js` coordinator
+6. No visible changes to users
+
+### Phase 5: Settings Modularization
+1. Extract theme settings to `theme-settings.js`
+2. Extract shortcut UI to `shortcut-ui.js`
+3. Extract import/export to `data-settings.js`
+4. Extract patterns to `patterns-ui.js`
+5. Create `settings/index.js` coordinator
+6. No visible changes to users
+
+### Phase 6: Search and Theme UI
+1. Extract search to `search.js`
+2. Extract theme UI to `theme-ui.js`
+3. Final cleanup of `sidepanel.js`
+
+---
+
+## Target Metrics
+
+| Metric | Current | Target |
+|--------|---------|--------|
+| `sidepanel.js` lines | 2,794 | ~200 (entry point only) |
+| Largest module | 2,794 | ~300 |
+| Average module size | N/A | ~150 |
+| Number of modules | 1 | ~15 |
+| Global variables | 12+ | 0 (in State module) |
+
+---
+
+## Module Loading Strategy
+
+Since this is a Chrome extension without a bundler, modules will use the revealing module pattern:
+
+```javascript
+// state.js
+const State = (function() {
+  // Private state
+  let selectedTabIds = new Set();
+
+  // Public API
+  return {
+    getSelectedTabIds() { return new Set(selectedTabIds); },
+    setSelectedTabIds(ids) { selectedTabIds = new Set(ids); this.emit('selection-changed'); },
+    // ...
+  };
+})();
+```
+
+Load order in `sidepanel.html`:
 ```html
-<div class="view-toggle">
-  <button class="view-toggle-btn active" data-view="grouped" title="Grouped view">
-    <!-- Grid icon -->
-  </button>
-  <button class="view-toggle-btn" data-view="ungrouped" title="List view">
-    <!-- List icon -->
-  </button>
-</div>
-```
+<!-- Common modules first -->
+<script src="../common/url-utils.js"></script>
+<script src="../common/storage.js"></script>
+<!-- ... -->
 
-### 1.3 Ungrouped View Behavior
+<!-- Sidepanel modules -->
+<script src="modules/state.js"></script>
+<script src="modules/navigation.js"></script>
+<script src="modules/search.js"></script>
+<script src="modules/theme-ui.js"></script>
 
-**Tab Sorting:**
-- Sort by domain (alphabetically), then by title within domain
-- Tabs from the same domain appear consecutively (visual grouping without accordions)
-- Include subtle domain separator or domain badge on each tab
+<script src="modules/live-tabs/tab-item.js"></script>
+<script src="modules/live-tabs/home-tabs-ui.js"></script>
+<script src="modules/live-tabs/open-tabs-ui.js"></script>
+<script src="modules/live-tabs/view-toggle.js"></script>
+<script src="modules/live-tabs/index.js"></script>
 
-**Tab Item Display:**
-- Same tab item component as grouped view
-- Add domain badge/label to each tab item
-- Checkbox for selection
-- Same action buttons (Protect, Vault, Close)
+<script src="modules/vault/tab-item.js"></script>
+<script src="modules/vault/group-card.js"></script>
+<script src="modules/vault/history-ui.js"></script>
+<script src="modules/vault/drag-drop.js"></script>
+<script src="modules/vault/index.js"></script>
 
-### 1.4 Settings Persistence
+<script src="modules/settings/theme-settings.js"></script>
+<script src="modules/settings/shortcut-ui.js"></script>
+<script src="modules/settings/data-settings.js"></script>
+<script src="modules/settings/patterns-ui.js"></script>
+<script src="modules/settings/index.js"></script>
 
-**Setting Key:** `liveTabsView`
-**Values:** `'grouped'` | `'ungrouped'`
-**Default:** `'grouped'`
-
----
-
-## Feature 2: Selection Behavior Fixes
-
-### 2.1 Group Checkbox Behavior
-
-**Requirement:** Group checkbox should select/deselect all items in the group.
-
-**Current Behavior:** This already works correctly in the code.
-
-**Expected Behavior:**
-- Checking group checkbox → all tabs in group become selected
-- Unchecking group checkbox → all tabs in group become deselected
-- Mixed selection → group checkbox shows indeterminate state
-
-### 2.2 Vault Button States
-
-**Requirement:** Vault buttons should be disabled until tabs are selected.
-
-**Domain "Vault" Button:**
-| State | Button |
-|-------|--------|
-| Nothing selected in group | Disabled |
-| Some/all tabs selected | Enabled |
-
-**"Vault Selected" Button (bottom):**
-| State | Button |
-|-------|--------|
-| No tabs selected anywhere | Disabled |
-| Any tabs selected | Enabled |
-
-### 2.3 Visual Disabled State
-
-```css
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  pointer-events: none;
-}
+<!-- Main entry point last -->
+<script src="sidepanel.js"></script>
 ```
 
 ---
 
-## Feature 3: Multi-Group Vaulting
+## Non-Goals (v8)
 
-### 3.1 Vault Selected Across Groups
-
-**Requirement:** "Vault Selected" should handle tabs from multiple domain groups.
-
-**Current Behavior:** Already works — `shutdown-tabs-by-domain` groups selected tabs by domain.
-
-**Expected Behavior:**
-- Select tabs from multiple domains
-- Click "Vault Selected"
-- Each domain gets its own vault group
-
-### 3.2 Vault Multiple Groups at Once
-
-**Requirement:** Selecting multiple group checkboxes should vault all those groups.
-
-**Behavior:**
-- Select group A checkbox (all A tabs selected)
-- Select group B checkbox (all B tabs selected)
-- Click "Vault Selected" → vaults A and B as separate groups
-
----
-
-## UI Specifications
-
-### Live Tabs Panel Layout (Updated)
-
-```
-Live Tabs
-─────────────────────────────
-[Search open tabs...]
-
-[View: ▣ Grouped | ☰ List]
-
-Home Tabs (3)
-  [Home tab items...]
-
-Open Tabs (15)
-  [Domain groups or flat list based on view]
-
-─────────────────────────────
-[X selected]  [Vault Selected]
-```
-
-### View Toggle Styling
-
-```css
-.view-toggle {
-  display: flex;
-  gap: 4px;
-  background: var(--bg-surface);
-  border-radius: 6px;
-  padding: 2px;
-}
-
-.view-toggle-btn {
-  padding: 6px 10px;
-  border: none;
-  background: transparent;
-  border-radius: 4px;
-  cursor: pointer;
-  color: var(--text-muted);
-}
-
-.view-toggle-btn.active {
-  background: var(--bg);
-  color: var(--primary);
-}
-```
-
-### Icon Options
-
-**Grouped View Icon:**
-- Unicode: `⊞` (U+229E) or `▦` (U+25A6)
-- Or SVG grid icon
-
-**Ungrouped View Icon:**
-- Unicode: `☰` (U+2630) hamburger menu
-- Or `≡` (U+2261) identical to
-- Or SVG list icon
-
----
-
-## Technical Notes
-
-### Settings Update
-
-Add to `DEFAULT_SETTINGS`:
-```javascript
-{
-  // ... existing
-  liveTabsView: 'grouped'
-}
-```
-
-### Render Logic
-
-```javascript
-async function renderOpenTabsList(tabs) {
-  const viewMode = await Settings.getSetting('liveTabsView') || 'grouped';
-
-  if (viewMode === 'grouped') {
-    renderGroupedView(tabs);
-  } else {
-    renderUngroupedView(tabs);
-  }
-}
-
-function renderUngroupedView(tabs) {
-  // Sort by domain, then by title
-  const sorted = [...tabs].sort((a, b) => {
-    const domainA = UrlUtils.getDomainFromUrl(a.url);
-    const domainB = UrlUtils.getDomainFromUrl(b.url);
-    if (domainA !== domainB) return domainA.localeCompare(domainB);
-    return a.title.localeCompare(b.title);
-  });
-
-  // Render flat list with domain badges
-  for (const tab of sorted) {
-    container.appendChild(createUngroupedTabItem(tab));
-  }
-}
-```
-
-### Button State Management
-
-```javascript
-function updateVaultButtonStates() {
-  const vaultSelectedBtn = document.getElementById('vaultSelectedBtn');
-  vaultSelectedBtn.disabled = selectedTabIds.size === 0;
-
-  // Update domain vault buttons
-  document.querySelectorAll('.domain-group-card').forEach(card => {
-    const vaultBtn = card.querySelector('.domain-vault-btn');
-    const hasSelectedTabs = Array.from(card.querySelectorAll('.domain-tab-checkbox'))
-      .some(cb => cb.checked);
-    vaultBtn.disabled = !hasSelectedTabs;
-  });
-}
-```
-
----
-
-## Non-Goals (v7)
-
-- Tab sorting options (by title, by most recently used, etc.)
-- Tab filtering by other criteria
-- Batch close without vaulting
-- Drag-and-drop reordering of live tabs
+- Adding new user-facing features
+- Changing the service worker architecture
+- Introducing a build system or bundler
+- TypeScript conversion
+- Unit test framework setup (future v9)
 
 ---
 
 ## Success Criteria
 
-- [ ] View toggle appears in Live Tabs panel
-- [ ] Grouped view shows domain accordions (current behavior)
-- [ ] Ungrouped view shows flat list sorted by domain
-- [ ] View preference persists across sessions
-- [ ] "Vault Selected" button disabled when nothing selected
-- [ ] Domain "Vault" button disabled when no tabs selected in that group
-- [ ] Selecting group checkbox selects all tabs in group
-- [ ] Can vault tabs from multiple groups with single "Vault Selected" click
+- [ ] `sidepanel.js` reduced to ~200 lines (initialization only)
+- [ ] No module exceeds 350 lines
+- [ ] All existing functionality preserved
+- [ ] No visual changes for users
+- [ ] Each module has clear, documented API
+- [ ] State changes flow through State module
+- [ ] Panels are independently renderable
 
 ---
 
-## File Structure Impact
+## Risks and Mitigations
 
-```
-src/
-├── common/
-│   └── settings.js          # Add liveTabsView setting
-├── sidepanel/
-│   ├── sidepanel.js        # View toggle, ungrouped rendering, button states
-│   ├── sidepanel.css       # View toggle styles, disabled button styles
-│   └── sidepanel.html      # View toggle HTML
-```
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Breaking existing functionality | HIGH | Incremental refactoring, test after each phase |
+| Load order bugs | MEDIUM | Document dependencies, test in dev mode |
+| Performance regression | LOW | Profile before/after, modules are small |
+| Scope creep | MEDIUM | No new features, architecture only |
 
 ---
 
 ## References
 
-- **v6 PRD (archived):** `archive/PRD-v6-2026-02-22.md`
-- **v6 TICKETS (archived):** `archive/TICKETS-v6-2026-02-22.md`
+- **v7 PRD (archived):** `archive/PRD-v7-2026-02-24.md`
+- **v7 TICKETS (archived):** `archive/TICKETS-v7-2026-02-24.md`
+- **Code review:** `context_items/opus-cursor-review.md`

@@ -1,484 +1,552 @@
-# TICKETS: Tab Goblin v7 — Live Tabs View Improvements
+# TICKETS: Tab Goblin v8 — Modular Architecture Refactor
 
 Each ticket includes a **Completion Promise** — the concrete condition to verify the ticket is done.
 
-**Previous Version:** v6 archived at `archive/TICKETS-v6-2026-02-22.md`
+**Previous Version:** v7 archived at `archive/TICKETS-v7-2026-02-24.md`
 **PRD Reference:** `PRD.md`
 
 ---
 
-## Phase 1: View Toggle Infrastructure
+## Phase 1: State Extraction
 
-### TG7-001: Add View Toggle Setting [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.4
-
-**Goal:** Add setting for live tabs view preference.
-
-**Tasks:**
-- Add `liveTabsView` to `DEFAULT_SETTINGS` in `settings.js`
-- Default value: `'grouped'`
-- Valid values: `'grouped'` | `'ungrouped'`
-- Ensure setting persists across sessions
-
-**Files to Modify:**
-- `src/common/settings.js`
-
-**Completion Promise:** `Settings.getSetting('liveTabsView')` returns `'grouped'` by default. Setting can be updated and persists.
-
----
-
-### TG7-002: Create View Toggle UI [DONE]
+### TG8-001: Create State Module
 
 **Priority:** HIGH
-**PRD Reference:** Section 1.2
+**PRD Reference:** State Management section
 
-**Goal:** Add view toggle buttons to Live Tabs panel.
+**Goal:** Extract all global state variables into a centralized State module.
 
-**Tasks:**
-- Add view toggle container to `sidepanel.html` (in Live Tabs panel)
-- Position above the Open Tabs section, below Home Tabs
-- Create two icon buttons with radio behavior
-- Grouped icon: `▦` or grid SVG
-- Ungrouped icon: `☰` or list SVG
-- Add `.active` class to current view button
-- Wire up click handlers to switch view and save setting
-
-**HTML Structure:**
-```html
-<div class="view-toggle" role="radiogroup" aria-label="View mode">
-  <button class="view-toggle-btn active" data-view="grouped"
-          role="radio" aria-checked="true" title="Grouped by domain">
-    <span aria-hidden="true">▦</span>
-  </button>
-  <button class="view-toggle-btn" data-view="ungrouped"
-          role="radio" aria-checked="false" title="List view">
-    <span aria-hidden="true">☰</span>
-  </button>
-</div>
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.html`
-- `src/sidepanel/sidepanel.js` (event handlers)
-
-**Completion Promise:** View toggle appears in Live Tabs panel. Clicking buttons switches active state and saves setting.
-
----
-
-### TG7-003: Style View Toggle [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.2
-
-**Goal:** Style the view toggle to match the Tab Goblin design system.
+**Current State Variables to Extract:**
+- `selectedTabIds` (Set)
+- `collapsedDomainGroups` (Set)
+- `expandedVaultGroups` (Set)
+- `homeTabsCollapsed` (boolean)
+- `currentTab` (string)
+- `currentSearchQuery` (string)
+- `searchDebounceTimer` (timer id)
+- `tabChangeDebounceTimer` (timer id)
 
 **Tasks:**
-- Add `.view-toggle` container styles
-- Add `.view-toggle-btn` button styles
-- Add `.view-toggle-btn.active` active state
-- Use CSS variables for theming
-- Ensure hover/focus states for accessibility
+- Create `src/sidepanel/modules/state.js`
+- Implement revealing module pattern
+- Add getters/setters for each state variable
+- Add simple event subscription system (subscribe/emit)
+- Update `sidepanel.html` to load state.js first
 
-**CSS:**
-```css
-.view-toggle {
-  display: flex;
-  gap: 2px;
-  background: var(--bg-surface);
-  border-radius: 6px;
-  padding: 2px;
-  margin-bottom: 12px;
-}
-
-.view-toggle-btn {
-  padding: 6px 12px;
-  border: none;
-  background: transparent;
-  border-radius: 4px;
-  cursor: pointer;
-  color: var(--text-muted);
-  font-size: 16px;
-  transition: background-color 0.15s, color 0.15s;
-}
-
-.view-toggle-btn:hover {
-  color: var(--text);
-}
-
-.view-toggle-btn.active {
-  background: var(--bg);
-  color: var(--primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-.view-toggle-btn:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.css`
-
-**Completion Promise:** Toggle looks good in both light and dark themes. Active state is clear. Focus states work for keyboard navigation.
-
----
-
-## Phase 2: Ungrouped View Implementation
-
-### TG7-004: Refactor renderOpenTabsList for View Modes [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.1, 1.3
-
-**Goal:** Update render function to support both view modes.
-
-**Tasks:**
-- Read view mode setting at render time
-- Extract current grouped rendering to `renderGroupedView(tabs, container)`
-- Create `renderUngroupedView(tabs, container)` function
-- Call appropriate function based on view mode
-- Ensure view toggle updates when switching
-
-**Code Structure:**
+**File Structure:**
 ```javascript
-async function renderOpenTabsList(tabs) {
-  const container = document.getElementById('domainGroupsList');
-  const viewMode = await Settings.getSetting('liveTabsView') || 'grouped';
+const State = (function() {
+  // Private state
+  let _selectedTabIds = new Set();
+  let _subscribers = {};
 
-  clearContainer(container);
+  return {
+    // Selection state
+    getSelectedTabIds() { return new Set(_selectedTabIds); },
+    addSelectedTab(id) { _selectedTabIds.add(id); this.emit('selection'); },
+    removeSelectedTab(id) { _selectedTabIds.delete(id); this.emit('selection'); },
+    clearSelection() { _selectedTabIds.clear(); this.emit('selection'); },
+    hasSelectedTab(id) { return _selectedTabIds.has(id); },
+    getSelectionCount() { return _selectedTabIds.size; },
 
-  if (viewMode === 'grouped') {
-    renderGroupedView(tabs, container);
-  } else {
-    renderUngroupedView(tabs, container);
-  }
+    // Event system
+    subscribe(event, callback) { /* ... */ },
+    emit(event, data) { /* ... */ },
 
-  updateViewToggleUI(viewMode);
-}
+    // ... other state
+  };
+})();
 ```
 
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-
-**Completion Promise:** Changing view setting causes different render function to be called. Grouped view works same as before.
+**Completion Promise:** State module exists with all current global variables migrated. Event system allows components to subscribe to state changes.
 
 ---
 
-### TG7-005: Implement Ungrouped View Rendering [DONE]
+### TG8-002: Migrate sidepanel.js to Use State Module
 
 **Priority:** HIGH
-**PRD Reference:** Section 1.3
+**Depends On:** TG8-001
 
-**Goal:** Render tabs in a flat list sorted by domain.
+**Goal:** Update all references to global variables to use State module.
 
 **Tasks:**
-- Sort tabs by domain (alphabetically), then by title
-- Create flat list without accordion wrappers
-- Add domain badge to each tab item
-- Reuse existing tab item components where possible
-- Include checkbox, favicon, title, URL, action buttons
+- Replace `selectedTabIds` references with `State.getSelectedTabIds()`, etc.
+- Replace direct mutations with State setters
+- Remove global variable declarations from sidepanel.js
+- Test all selection/deselection flows
+- Test all accordion expand/collapse flows
 
-**Tab Sorting:**
-```javascript
-function renderUngroupedView(tabs, container) {
-  const sorted = [...tabs].sort((a, b) => {
-    const domainA = UrlUtils.getDomainFromUrl(a.url) || '';
-    const domainB = UrlUtils.getDomainFromUrl(b.url) || '';
-    const domainCompare = domainA.localeCompare(domainB);
-    if (domainCompare !== 0) return domainCompare;
-    return (a.title || '').localeCompare(b.title || '');
-  });
-
-  for (const tab of sorted) {
-    container.appendChild(createUngroupedTabItem(tab));
-  }
-}
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-
-**Completion Promise:** Ungrouped view shows flat list of tabs. Tabs sorted by domain then title. Domain badge visible on each tab.
+**Completion Promise:** No global state variables remain in sidepanel.js. All state access goes through State module. All existing functionality works.
 
 ---
 
-### TG7-006: Create Ungrouped Tab Item Component [DONE]
+## Phase 2: Navigation Extraction
+
+### TG8-003: Create Navigation Module
 
 **Priority:** HIGH
-**PRD Reference:** Section 1.3
+**PRD Reference:** Navigation section
 
-**Goal:** Create tab item component for ungrouped view.
+**Goal:** Extract tab bar navigation and panel switching to a dedicated module.
+
+**Functions to Extract:**
+- `updateTabBarUI()`
+- `showPanel(tabName)`
+- `switchToTab(tabName)`
+- `loadActiveTab()`
+- `saveActiveTab(tabName)`
+- `handleTabBarKeydown(e)`
 
 **Tasks:**
-- Create `createUngroupedTabItem(tab)` function
-- Include: checkbox, favicon, title (truncated), domain badge, actions
-- Actions: Protect button, Vault button, Close button
-- Wire checkbox to `selectedTabIds` tracking
-- Match styling with grouped view tab items
+- Create `src/sidepanel/modules/navigation.js`
+- Move navigation functions
+- Subscribe to State.currentTab changes
+- Expose `Navigation.init()` and `Navigation.switchToTab()`
+- Update sidepanel.js to use Navigation module
+- Update event listeners to use Navigation
 
-**HTML Structure:**
-```html
-<div class="ungrouped-tab-item">
-  <input type="checkbox" class="tab-checkbox">
-  <img class="tab-favicon">
-  <div class="tab-info">
-    <div class="tab-title">Page Title</div>
-    <div class="tab-domain">example.com</div>
-  </div>
-  <div class="tab-actions">
-    <button class="protect-btn">Shield</button>
-    <button class="vault-btn">Vault</button>
-    <button class="close-btn">X</button>
-  </div>
-</div>
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-- `src/sidepanel/sidepanel.css` (ungrouped item styles)
-
-**Completion Promise:** Ungrouped tab items display with all expected elements. Checkboxes work. Action buttons work.
+**Completion Promise:** Navigation module handles all tab switching. Panel visibility managed by Navigation. Keyboard navigation works.
 
 ---
 
-### TG7-007: Style Ungrouped Tab Items [DONE]
+## Phase 3: Live Tabs Modularization
 
-**Priority:** MEDIUM
-**PRD Reference:** Section 1.3
-
-**Goal:** Style ungrouped tab items to match design system.
-
-**Tasks:**
-- Style `.ungrouped-tab-item` container
-- Style domain badge (small, muted text)
-- Ensure consistent spacing with grouped items
-- Add hover and selected states
-- Support both light and dark themes
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.css`
-
-**Completion Promise:** Ungrouped items look consistent with grouped view. Domain badge is visible but not prominent. Hover and selection states work.
-
----
-
-## Phase 3: Button State Management
-
-### TG7-008: Disable Vault Selected When Empty [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 2.2
-
-**Goal:** Disable "Vault Selected" button when no tabs are selected.
-
-**Tasks:**
-- Add `disabled` attribute management to button
-- Update button state in `updateSelectedCount()` function
-- Set initial state to disabled on render
-- Enable when `selectedTabIds.size > 0`
-- Style disabled state
-
-**Code:**
-```javascript
-function updateSelectedCount() {
-  const count = selectedTabIds.size;
-  document.getElementById('selectedCount').textContent = `${count} selected`;
-
-  const vaultSelectedBtn = document.getElementById('vaultSelectedBtn');
-  vaultSelectedBtn.disabled = count === 0;
-}
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-- `src/sidepanel/sidepanel.css` (disabled button styles)
-
-**Completion Promise:** "Vault Selected" button is disabled when 0 tabs selected. Enabled when any tab selected. Visual disabled state is clear.
-
----
-
-### TG7-009: Disable Domain Vault Button When Empty [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 2.2
-
-**Goal:** Disable domain "Vault" button when no tabs selected in that group.
-
-**Tasks:**
-- Add class to domain vault button for selection (e.g., `.domain-vault-btn`)
-- Create `updateDomainVaultButton(groupCard)` function
-- Check if any tabs in group are selected
-- Disable button if none selected, enable if any selected
-- Call on checkbox change events
-- Call on initial render
-
-**Code:**
-```javascript
-function updateDomainVaultButton(groupCard) {
-  const vaultBtn = groupCard.querySelector('.domain-vault-btn');
-  const anySelected = Array.from(groupCard.querySelectorAll('.domain-tab-checkbox'))
-    .some(cb => cb.checked);
-  vaultBtn.disabled = !anySelected;
-}
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-
-**Completion Promise:** Domain "Vault" buttons are disabled by default. Enable when any tab in that group is selected.
-
----
-
-### TG7-010: Style Disabled Buttons [DONE]
-
-**Priority:** MEDIUM
-**PRD Reference:** Section 2.3
-
-**Goal:** Ensure disabled buttons have clear visual indicator.
-
-**Tasks:**
-- Add `.btn:disabled` styles
-- Reduce opacity
-- Change cursor to `not-allowed`
-- Test in both light and dark themes
-
-**CSS:**
-```css
-.btn:disabled,
-.btn[disabled] {
-  opacity: 0.5;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.css`
-
-**Completion Promise:** Disabled buttons are visually distinct. Cursor shows they're not clickable. Works in all themes.
-
----
-
-## Phase 4: Selection Behavior Verification
-
-### TG7-011: Verify Group Checkbox Behavior [DONE]
-
-**Priority:** MEDIUM
-**PRD Reference:** Section 2.1
-
-**Goal:** Verify and document that group checkbox selects all tabs.
-
-**Current Behavior (verify still works):**
-- Group checkbox checked → all child checkboxes checked
-- Group checkbox unchecked → all child checkboxes unchecked
-- Some children checked → group checkbox shows indeterminate
-
-**Tasks:**
-- Test group checkbox behavior manually
-- Verify `updateDomainGroupCheckbox` function works correctly
-- Ensure checkbox state syncs with `selectedTabIds`
-- Fix any issues discovered
-
-**Test Cases:**
-- [ ] Check group checkbox → all tabs selected, count updates
-- [ ] Uncheck group checkbox → all tabs deselected, count updates
-- [ ] Check some tabs → group shows indeterminate
-- [ ] Check all tabs manually → group checkbox becomes checked
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (if fixes needed)
-
-**Completion Promise:** Group checkbox selects/deselects all tabs. Indeterminate state shows for partial selection.
-
----
-
-### TG7-012: Multi-Group Selection Test [DONE]
-
-**Priority:** MEDIUM
-**PRD Reference:** Section 3.2
-
-**Goal:** Verify vaulting tabs from multiple groups works.
-
-**Test Steps:**
-1. Open tabs from 3+ different domains
-2. Select group A checkbox (all A tabs)
-3. Select group B checkbox (all B tabs)
-4. Click "Vault Selected"
-5. Verify: A and B tabs vaulted as separate groups in vault
-
-**Tasks:**
-- Test manually
-- Fix any issues discovered
-- Document expected behavior
-
-**Completion Promise:** Selecting multiple group checkboxes and clicking "Vault Selected" creates separate vault groups per domain.
-
----
-
-## Phase 5: Polish and Testing
-
-### TG7-013: View Toggle Keyboard Navigation [DONE]
-
-**Priority:** MEDIUM
-
-**Goal:** Ensure view toggle is keyboard accessible.
-
-**Tasks:**
-- Verify arrow keys switch between toggle buttons
-- Verify Enter/Space activates buttons
-- Verify focus indicators are visible
-- Add proper ARIA attributes
-
-**ARIA Requirements:**
-- `role="radiogroup"` on container
-- `role="radio"` on buttons
-- `aria-checked="true/false"` updated on toggle
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-- `src/sidepanel/sidepanel.html`
-
-**Completion Promise:** View toggle is fully keyboard navigable. Screen readers announce state correctly.
-
----
-
-### TG7-014: Integration Testing [DONE]
+### TG8-004: Extract Tab Item Component
 
 **Priority:** HIGH
 
-**Goal:** Test all features work together.
+**Goal:** Create reusable tab item component for Live Tabs.
 
-**Test Matrix:**
+**Functions to Extract:**
+- `createFavicon()`
+- `createTabInfo()`
+- `createDomainTabItem()`
+- `createUngroupedTabItem()`
 
-| Scenario | Expected Result |
-|----------|-----------------|
-| Switch to ungrouped, select tabs, vault | Tabs vaulted, correct groups created |
-| Switch back to grouped, verify selection | Selection cleared on view change |
-| Grouped: select group, vault | All group tabs vaulted |
-| Ungrouped: select multiple domains' tabs | Vaulted as separate domain groups |
-| No selection, both buttons disabled | Vault buttons disabled |
-| Select 1 tab, buttons enabled | Vault Selected and domain Vault enabled |
+**Tasks:**
+- Create `src/sidepanel/modules/live-tabs/tab-item.js`
+- Create `LiveTabItem` module with factory functions
+- Consolidate duplicate tab rendering logic
+- Handle checkbox state via State module
 
-**Completion Promise:** All test scenarios pass. No regressions from v6.
+**Completion Promise:** `LiveTabItem.create()` returns a complete tab item element. Works for both grouped and ungrouped views.
 
 ---
 
-### TG7-015: Code Cleanup [DONE]
+### TG8-005: Extract Home Tabs UI
+
+**Priority:** HIGH
+
+**Goal:** Extract Home Tabs section rendering to dedicated module.
+
+**Functions to Extract:**
+- `renderHomeTabsSection()`
+- `createHomeTabItem()`
+- `toggleHomeTabsSection()`
+- `removeTabFromHome()`
+- `addTabToHome()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/live-tabs/home-tabs-ui.js`
+- Create `HomeTabsUI` module
+- Subscribe to relevant State changes
+- Handle collapse state via State module
+
+**Completion Promise:** `HomeTabsUI.render()` renders complete Home Tabs section. Collapse/expand works. Add/remove home tabs works.
+
+---
+
+### TG8-006: Extract Open Tabs UI
+
+**Priority:** HIGH
+
+**Goal:** Extract Open Tabs list rendering to dedicated module.
+
+**Functions to Extract:**
+- `renderOpenTabsList()`
+- `renderGroupedView()`
+- `renderUngroupedView()`
+- `createDomainGroupCard()`
+- `updateDomainGroupCheckbox()`
+- `updateDomainVaultButton()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/live-tabs/open-tabs-ui.js`
+- Create `OpenTabsUI` module
+- Use LiveTabItem for tab rendering
+- Handle view mode via Settings
+
+**Completion Promise:** `OpenTabsUI.render()` renders tabs in correct view mode. Group selection works. Vault buttons enable/disable correctly.
+
+---
+
+### TG8-007: Extract View Toggle
+
+**Priority:** MEDIUM
+
+**Goal:** Extract view toggle component.
+
+**Functions to Extract:**
+- `handleViewToggle()`
+- `updateViewToggleUI()`
+- `handleViewToggleKeydown()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/live-tabs/view-toggle.js`
+- Create `ViewToggle` module
+- Wire up to Settings for persistence
+
+**Completion Promise:** `ViewToggle.init()` sets up toggle behavior. Mode persists across sessions.
+
+---
+
+### TG8-008: Create Live Tabs Panel Coordinator
+
+**Priority:** HIGH
+**Depends On:** TG8-004, TG8-005, TG8-006, TG8-007
+
+**Goal:** Create coordinator that orchestrates Live Tabs panel components.
+
+**Functions to Extract:**
+- `renderLiveTabsPanel()`
+- `refreshLivePanel()`
+- `updateLiveTabCount()`
+- `vaultSelectedTabs()`
+- `vaultDomainTabs()`
+- `vaultSingleTab()`
+- `selectAllTabs()`
+- `deselectAllTabs()`
+- `updateSelectedCount()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/live-tabs/index.js`
+- Create `LiveTabsPanel` module
+- Coordinate HomeTabsUI and OpenTabsUI
+- Handle footer actions (Vault Selected, Vault All)
+
+**Completion Promise:** `LiveTabsPanel.render()` renders complete Live Tabs panel. All vault operations work. Selection count updates.
+
+---
+
+## Phase 4: Vault Modularization
+
+### TG8-009: Extract Vault Tab Item Component
+
+**Priority:** HIGH
+
+**Goal:** Create tab item component for Vault.
+
+**Functions to Extract:**
+- `createTabItem()` (vault version)
+
+**Tasks:**
+- Create `src/sidepanel/modules/vault/tab-item.js`
+- Create `VaultTabItem` module
+- Handle drag-drop data attributes
+
+**Completion Promise:** `VaultTabItem.create()` returns complete vault tab item. Drag handle works.
+
+---
+
+### TG8-010: Extract Vault Group Card
+
+**Priority:** HIGH
+
+**Goal:** Extract vault group card rendering.
+
+**Functions to Extract:**
+- `createGroupCard()`
+- `restoreGroup()`
+- `copyGroupUrls()`
+- `showRenameDialog()`
+- `renameGroup()`
+- `deleteGroup()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/vault/group-card.js`
+- Create `VaultGroupCard` module
+- Use VaultTabItem for tab rendering
+
+**Completion Promise:** `VaultGroupCard.create()` returns complete group card. All group actions work (restore, rename, delete, copy).
+
+---
+
+### TG8-011: Extract History UI
+
+**Priority:** MEDIUM
+
+**Goal:** Extract history section rendering.
+
+**Functions to Extract:**
+- `renderHistorySection()`
+- `createHistoryItem()`
+- `restoreFromHistory()`
+- `removeFromHistory()`
+- `vaultFromHistory()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/vault/history-ui.js`
+- Create `HistoryUI` module
+- Handle collapse state via State
+
+**Completion Promise:** `HistoryUI.render()` renders history section. All history actions work.
+
+---
+
+### TG8-012: Extract Drag-Drop Handler
+
+**Priority:** MEDIUM
+
+**Goal:** Extract drag-and-drop logic.
+
+**Functions to Extract:**
+- `clearDragStyles()`
+- `handleDragStart()`
+- `handleDragEnd()`
+- `handleDragOver()`
+- `handleDrop()`
+- `handleGroupDragOver()`
+- `handleGroupDragLeave()`
+- `handleGroupDrop()`
+- `moveTabToPosition()`
+- `moveTabToGroup()`
+- `handleGroupReorderDragStart()`
+- `handleGroupReorderDragEnd()`
+- `reorderGroup()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/vault/drag-drop.js`
+- Create `DragDrop` module
+- Initialize with VaultPanel
+
+**Completion Promise:** `DragDrop.init()` sets up all drag-drop handlers. Tab reordering works. Group reordering works.
+
+---
+
+### TG8-013: Create Vault Panel Coordinator
+
+**Priority:** HIGH
+**Depends On:** TG8-009, TG8-010, TG8-011, TG8-012
+
+**Goal:** Create coordinator that orchestrates Vault panel components.
+
+**Functions to Extract:**
+- `renderVaultGroups()`
+- `restoreTab()`
+- `copyTabUrl()`
+- `deleteVaultTab()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/vault/index.js`
+- Create `VaultPanel` module
+- Coordinate VaultGroupCard, HistoryUI, DragDrop
+
+**Completion Promise:** `VaultPanel.render()` renders complete Vault panel. All tab operations work.
+
+---
+
+## Phase 5: Settings Modularization
+
+### TG8-014: Extract Theme Settings UI
+
+**Priority:** MEDIUM
+
+**Goal:** Extract theme mode and palette selection.
+
+**Functions to Extract:**
+- `initThemeSelector()`
+- `handleThemeModeChange()`
+- `handlePaletteChange()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/settings/theme-settings.js`
+- Create `ThemeSettingsUI` module
+
+**Completion Promise:** `ThemeSettingsUI.init()` sets up theme selection. Mode and palette changes work.
+
+---
+
+### TG8-015: Extract Shortcut UI
 
 **Priority:** LOW
 
-**Goal:** Clean up code and remove any debug statements.
+**Goal:** Extract keyboard shortcut display.
+
+**Functions to Extract:**
+- `isMacOS()`
+- `formatShortcutForOS()`
+- `getCurrentShortcut()`
+- `updateShortcutDisplay()`
+- `openShortcutConfig()`
 
 **Tasks:**
-- Remove any `console.log` debug statements
-- Ensure consistent code style
-- Add comments for complex logic
-- Verify no unused code
+- Create `src/sidepanel/modules/settings/shortcut-ui.js`
+- Create `ShortcutUI` module
 
-**Completion Promise:** No debug statements in production code. Code is clean and consistent.
+**Completion Promise:** `ShortcutUI.init()` displays current shortcut. Config button works.
+
+---
+
+### TG8-016: Extract Data Settings UI
+
+**Priority:** LOW
+
+**Goal:** Extract import/export UI.
+
+**Functions to Extract:**
+- `exportVault()`
+- `handleImportFile()`
+- `triggerImportFilePicker()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/settings/data-settings.js`
+- Create `DataSettingsUI` module
+
+**Completion Promise:** `DataSettingsUI.init()` sets up import/export buttons. Both operations work.
+
+---
+
+### TG8-017: Extract Patterns UI
+
+**Priority:** LOW
+
+**Goal:** Extract home tab patterns management.
+
+**Functions to Extract:**
+- `renderHomePatterns()`
+- `addNewPattern()`
+- `addCurrentTabAsPattern()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/settings/patterns-ui.js`
+- Create `PatternsUI` module
+
+**Completion Promise:** `PatternsUI.render()` shows pattern list. Add/remove patterns works.
+
+---
+
+### TG8-018: Create Settings Panel Coordinator
+
+**Priority:** MEDIUM
+**Depends On:** TG8-014, TG8-015, TG8-016, TG8-017
+
+**Goal:** Create coordinator that orchestrates Settings panel components.
+
+**Tasks:**
+- Create `src/sidepanel/modules/settings/index.js`
+- Create `SettingsPanel` module
+- Coordinate all settings components
+
+**Completion Promise:** `SettingsPanel.render()` renders complete Settings panel.
+
+---
+
+## Phase 6: Search and Final Cleanup
+
+### TG8-019: Extract Search Module
+
+**Priority:** MEDIUM
+
+**Goal:** Extract global search functionality.
+
+**Functions to Extract:**
+- `matchesSearch()`
+- `handleGlobalSearch()`
+- `renderSearchResults()`
+- `createSearchResultGroupCard()`
+- `updateSearchUI()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/search.js`
+- Create `Search` module
+- Handle search state via State module
+
+**Completion Promise:** `Search.init()` sets up search handlers. Search works on Live and Vault panels.
+
+---
+
+### TG8-020: Extract Theme UI Module
+
+**Priority:** LOW
+
+**Goal:** Extract theme initialization (separate from settings UI).
+
+**Functions to Extract:**
+- `initTheme()`
+- `applyThemeFromSettings()`
+- `handleSystemThemeChange()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/theme-ui.js`
+- Create `ThemeUI` module
+
+**Completion Promise:** `ThemeUI.init()` applies theme on load. System theme changes detected.
+
+---
+
+### TG8-021: Final sidepanel.js Cleanup
+
+**Priority:** HIGH
+**Depends On:** All other tickets
+
+**Goal:** Reduce sidepanel.js to initialization-only entry point.
+
+**Remaining Responsibilities:**
+- `init()` function
+- `setupEventListeners()` (delegating to modules)
+- `setupTabListeners()`
+- `checkOnboarding()`
+- `showOnboardingTip()`
+
+**Tasks:**
+- Remove all extracted functions
+- Update init() to initialize all modules
+- Update event listeners to delegate to modules
+- Verify no dead code remains
+
+**Target Structure:**
+```javascript
+// Tab Goblin - Side Panel Entry Point
+
+document.addEventListener('DOMContentLoaded', init);
+
+async function init() {
+  await ThemeUI.init();
+  Navigation.init();
+  Search.init();
+  await Navigation.switchToTab(await State.loadActiveTab());
+  setupEventListeners();
+  setupTabListeners();
+  await checkOnboarding();
+}
+
+function setupEventListeners() {
+  // Delegate to panel coordinators
+  LiveTabsPanel.setupEvents();
+  VaultPanel.setupEvents();
+  SettingsPanel.setupEvents();
+}
+
+// ... tab listeners and onboarding only
+```
+
+**Completion Promise:** `sidepanel.js` is under 200 lines. All functionality delegated to modules. No dead code.
+
+---
+
+### TG8-022: Update HTML Script Loading
+
+**Priority:** HIGH
+**Depends On:** All module creation tickets
+
+**Goal:** Update sidepanel.html with correct module load order.
+
+**Tasks:**
+- Add all new module scripts in dependency order
+- Verify no load order errors
+- Test in Chrome
+
+**Completion Promise:** Extension loads without errors. All modules available at runtime.
 
 ---
 
@@ -486,45 +554,40 @@ function updateDomainVaultButton(groupCard) {
 
 | Priority | Tickets | Description |
 |----------|---------|-------------|
-| HIGH | TG7-001 to TG7-006, TG7-008, TG7-009, TG7-014 | Core features, button states, testing |
-| MEDIUM | TG7-007, TG7-010 to TG7-013 | Styling, verification, accessibility |
-| LOW | TG7-015 | Code cleanup |
-
----
-
-## Dependency Graph
-
-```
-TG7-001 (setting) ─┬─► TG7-002 (toggle UI) → TG7-003 (toggle styles)
-                   │
-                   └─► TG7-004 (refactor) → TG7-005 (ungrouped render) → TG7-006 (tab item) → TG7-007 (item styles)
-
-TG7-008 (vault selected disabled) ─┐
-TG7-009 (domain vault disabled) ───┼─► TG7-010 (disabled styles)
-                                   │
-TG7-011 (group checkbox verify) ───┴─► TG7-012 (multi-group test)
-
-TG7-002 → TG7-013 (keyboard nav)
-
-All → TG7-014 (integration test) → TG7-015 (cleanup)
-```
+| HIGH | TG8-001, 002, 003, 004, 005, 006, 008, 009, 010, 013, 021, 022 | Core state, navigation, panels |
+| MEDIUM | TG8-007, 011, 012, 014, 018, 019 | Supporting components |
+| LOW | TG8-015, 016, 017, 020 | Settings subsections, theme |
 
 ---
 
 ## Recommended Order
 
-1. **TG7-001** — Add view toggle setting
-2. **TG7-002** — Create view toggle UI
-3. **TG7-003** — Style view toggle
-4. **TG7-004** — Refactor render for view modes
-5. **TG7-005** — Implement ungrouped rendering
-6. **TG7-006** — Create ungrouped tab item
-7. **TG7-007** — Style ungrouped items
-8. **TG7-008** — Disable Vault Selected when empty
-9. **TG7-009** — Disable domain Vault when empty
-10. **TG7-010** — Style disabled buttons
-11. **TG7-011** — Verify group checkbox behavior
-12. **TG7-012** — Test multi-group selection
-13. **TG7-013** — View toggle keyboard nav
-14. **TG7-014** — Integration testing
-15. **TG7-015** — Code cleanup
+### Week 1: Foundation
+1. TG8-001 — Create State Module
+2. TG8-002 — Migrate to State Module
+3. TG8-003 — Create Navigation Module
+
+### Week 2: Live Tabs
+4. TG8-004 — Extract Tab Item Component
+5. TG8-005 — Extract Home Tabs UI
+6. TG8-006 — Extract Open Tabs UI
+7. TG8-007 — Extract View Toggle
+8. TG8-008 — Create Live Tabs Coordinator
+
+### Week 3: Vault
+9. TG8-009 — Extract Vault Tab Item
+10. TG8-010 — Extract Vault Group Card
+11. TG8-011 — Extract History UI
+12. TG8-012 — Extract Drag-Drop Handler
+13. TG8-013 — Create Vault Coordinator
+
+### Week 4: Settings and Cleanup
+14. TG8-014 — Extract Theme Settings UI
+15. TG8-015 — Extract Shortcut UI
+16. TG8-016 — Extract Data Settings UI
+17. TG8-017 — Extract Patterns UI
+18. TG8-018 — Create Settings Coordinator
+19. TG8-019 — Extract Search Module
+20. TG8-020 — Extract Theme UI Module
+21. TG8-021 — Final Cleanup
+22. TG8-022 — Update HTML Script Loading

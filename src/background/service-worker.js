@@ -310,6 +310,9 @@ async function handleMessage(message) {
     case 'close-to-history':
       return await closeTabToHistory(message.tabId);
 
+    case 'close-tabs-to-history':
+      return await closeTabsToHistory(message.tabIds);
+
     case 'get-history':
       return { success: true, history: await TabHistory.getHistory() };
 
@@ -348,6 +351,40 @@ async function closeTabToHistory(tabId) {
     return { success: true };
   } catch (error) {
     console.error('Error in closeTabToHistory:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Close multiple tabs and save them to history
+ * @param {number[]} tabIds - Chrome tab IDs
+ */
+async function closeTabsToHistory(tabIds) {
+  try {
+    if (!Array.isArray(tabIds) || tabIds.length === 0) {
+      return { success: false, error: 'Invalid tab IDs' };
+    }
+
+    const tabs = await Promise.all(
+      tabIds.map(id => chrome.tabs.get(id).catch(() => null))
+    );
+    const validTabs = tabs.filter(t => t !== null);
+
+    if (validTabs.length === 0) {
+      return { success: false, error: 'No valid tabs found' };
+    }
+
+    // Save all to history first
+    for (const tab of validTabs) {
+      await TabHistory.addToHistory(extractTabData(tab));
+    }
+
+    // Close the tabs (mark as extension-closed so onRemoved doesn't double-save)
+    await closeTabsByExtension(validTabs.map(t => t.id));
+
+    return { success: true, count: validTabs.length };
+  } catch (error) {
+    console.error('Error in closeTabsToHistory:', error);
     return { success: false, error: error.message };
   }
 }

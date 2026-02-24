@@ -8,7 +8,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Status
 
-**v7 Complete** — Live Tabs View Improvements:
+**v8 Planning** — Modular Architecture Refactor:
+- Break up `sidepanel.js` monolith (2,794 lines -> ~15 modules of ~150-300 lines each)
+- Centralized state management
+- Panel coordinators for Live Tabs, Vault, Settings
+- Separation of concerns: rendering, state, events
+
+**v7.1 Complete** — UI Polish:
+- Home Tabs section persists across Live Tabs and Vault panels (fixed position)
+
+**v7 Complete** (archived) — Live Tabs View Improvements:
 - View toggle: switch between grouped (accordion) and ungrouped (flat list) views
 - Ungrouped view: tabs sorted by domain, displayed with domain badges
 - Button state management: Vault buttons disabled until tabs selected
@@ -37,11 +46,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Key Documents
 
-- **PRD.md** — Full product requirements for v7
+- **PRD.md** — Full product requirements for v8 (modular architecture refactor)
 - **TICKETS.md** — Implementation tickets (check for `[DONE]` status)
 - **PROMPT.md** — Ralph Loop instructions (ONLY used with `/ralph-loop` command)
 - **context_items/opus-cursor-review.md** — Comprehensive code review (v6 baseline, fixes applied)
-- **archive/** — Completed v1-v6 iteration documents
+- **archive/** — Completed v1-v7 iteration documents
 - **documentation/** — User guide, developer guide, contributing guide
 
 ## Important: Ralph Loop Usage
@@ -236,33 +245,76 @@ chrome.tabs.onUpdated.addListener(callback);
 - **Single source of truth** — One implementation per function across codebase
 - **HTML escaping** — Escape user content when generating HTML for export
 
-## v7 Implementation Notes
+## v8 Architecture Notes
+
+### Current Problem
+`sidepanel.js` is a 2,794-line monolith with 79 functions and 12+ global variables. Hard to maintain, test, or extend.
+
+### Target Structure
+```
+src/sidepanel/
+├── sidepanel.js              # Entry point only (~200 lines)
+├── modules/
+│   ├── state.js              # Centralized state management
+│   ├── navigation.js         # Tab bar, panel switching
+│   ├── search.js             # Global search
+│   ├── theme-ui.js           # Theme initialization
+│   │
+│   ├── live-tabs/            # Live Tabs panel
+│   │   ├── index.js          # Coordinator
+│   │   ├── home-tabs-ui.js
+│   │   ├── open-tabs-ui.js
+│   │   ├── tab-item.js
+│   │   └── view-toggle.js
+│   │
+│   ├── vault/                # Vault panel
+│   │   ├── index.js          # Coordinator
+│   │   ├── group-card.js
+│   │   ├── tab-item.js
+│   │   ├── history-ui.js
+│   │   └── drag-drop.js
+│   │
+│   └── settings/             # Settings panel
+│       ├── index.js          # Coordinator
+│       ├── theme-settings.js
+│       ├── shortcut-ui.js
+│       ├── data-settings.js
+│       └── patterns-ui.js
+```
+
+### Module Pattern
+Using revealing module pattern (no bundler):
+```javascript
+const ModuleName = (function() {
+  // Private state and functions
+
+  return {
+    // Public API
+    init() { },
+    render() { },
+  };
+})();
+```
+
+### State Management
+Centralized State module with subscription system:
+```javascript
+State.subscribe('selection', callback);
+State.addSelectedTab(id); // Triggers 'selection' event
+```
+
+## v7 Implementation Notes (Archived)
 
 ### Live Tabs View Toggle
 - Two view modes: `'grouped'` (default) and `'ungrouped'`
 - Setting: `liveTabsView` in Settings storage
-- Toggle UI: icon buttons with radio behavior in Live Tabs panel
-- Grouped: domain accordions (existing behavior)
-- Ungrouped: flat list sorted by domain, then title
 
-### Ungrouped View
-- Tabs sorted alphabetically by domain, then by title within domain
-- Each tab shows domain badge for context
-- Same selection/action behavior as grouped view
-- Selection persists when switching views (cleared)
+### Home Tabs Persistence (v7.1)
+- Home Tabs section moved outside panel divs
+- Visible on Live Tabs and Vault, hidden on Settings
+- CSS: `main-content` is flex column, panels use `flex: 1`
 
-### Button State Management
-- "Vault Selected" button: disabled when `selectedTabIds.size === 0`
-- Domain "Vault" button: disabled when no tabs selected in that group
-- Visual: `opacity: 0.5`, `cursor: not-allowed`
-- State updates on every checkbox change
-
-### Group Checkbox
-- Clicking group checkbox selects/deselects all tabs in group
-- Indeterminate state when partially selected
-- Syncs with `selectedTabIds` set
-
-## v6 Implementation Notes (Complete)
+## v6 Implementation Notes (Archived)
 
 ### Import/Export Feature
 - Uses Netscape Bookmark HTML format (same as Chrome bookmark export)
