@@ -1,439 +1,552 @@
-# TICKETS: Tab Goblin v6 — Import/Export and Keyboard Shortcuts
+# TICKETS: Tab Goblin v8 — Modular Architecture Refactor
 
 Each ticket includes a **Completion Promise** — the concrete condition to verify the ticket is done.
 
-**Previous Version:** v5 archived at `archive/TICKETS-v5-2026-02-22.md`
+**Previous Version:** v7 archived at `archive/TICKETS-v7-2026-02-24.md`
 **PRD Reference:** `PRD.md`
 
 ---
 
-## Phase 1: Export Feature
+## Phase 1: State Extraction
 
-### TG6-001: Create Import/Export Module [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.1, 1.3
-
-**Goal:** Create a shared module for import/export functionality.
-
-**Tasks:**
-- Create `src/common/import-export.js`
-- Implement `escapeHtml()` helper for safe HTML generation
-- Implement `generateNetscapeBookmarks(vault)` function
-- Implement `parseNetscapeBookmarks(html)` function
-- Handle nested folders by flattening with "Parent > Child" naming
-- Skip empty folders and `<HR>` separator elements
-- Export module for use in sidepanel
-
-**Netscape Format Structure:**
-```html
-<!DOCTYPE NETSCAPE-Bookmark-file-1>
-<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
-<TITLE>Tab Goblin Export</TITLE>
-<H1>Tab Goblin Export</H1>
-<DL><p>
-    <DT><H3 ADD_DATE="timestamp">Group Name</H3>
-    <DL><p>
-        <DT><A HREF="url" ADD_DATE="timestamp">Title</A>
-    </DL><p>
-</DL><p>
-```
-
-**Files to Create:**
-- `src/common/import-export.js`
-
-**Completion Promise:** Module exports `generateNetscapeBookmarks()` and `parseNetscapeBookmarks()` functions. Both handle the Netscape Bookmark format correctly.
-
----
-
-### TG6-002: Implement Export Vault Function [DONE]
+### TG8-001: Create State Module
 
 **Priority:** HIGH
-**PRD Reference:** Section 1.1, 1.2
+**PRD Reference:** State Management section
 
-**Goal:** Generate and download vault as Netscape Bookmark HTML file.
+**Goal:** Extract all global state variables into a centralized State module.
 
-**Tasks:**
-- In `import-export.js`, implement full `generateNetscapeBookmarks()`:
-  - Convert each vault group to a folder (`<H3>`)
-  - Convert each tab to a bookmark (`<A HREF>`)
-  - Use `vaultedAt` timestamp (convert ms to seconds)
-  - Escape HTML entities in titles and URLs
-- Implement `downloadExport(vault)` function:
-  - Generate HTML content
-  - Create Blob with `text/html` type
-  - Create download link with filename `tab-goblin-export-YYYY-MM-DD.html`
-  - Trigger download
-  - Clean up object URL
-
-**Files to Modify:**
-- `src/common/import-export.js`
-
-**Completion Promise:** `downloadExport()` downloads a valid Netscape Bookmark HTML file. File can be imported into Chrome bookmarks.
-
----
-
-### TG6-003: Add Export UI to Settings [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.2
-
-**Goal:** Add Export button to Settings tab.
+**Current State Variables to Extract:**
+- `selectedTabIds` (Set)
+- `collapsedDomainGroups` (Set)
+- `expandedVaultGroups` (Set)
+- `homeTabsCollapsed` (boolean)
+- `currentTab` (string)
+- `currentSearchQuery` (string)
+- `searchDebounceTimer` (timer id)
+- `tabChangeDebounceTimer` (timer id)
 
 **Tasks:**
-- Add "Data" section to Settings panel (after Appearance, before Home Tabs)
-- Add section header: "Data"
-- Add "Export Vault" button
-- Add description text: "Download your vault as a bookmark file"
-- Wire button to call `downloadExport()` with current vault
-- Show toast on success: "Vault exported successfully"
-- Handle empty vault case: show toast "Vault is empty"
+- Create `src/sidepanel/modules/state.js`
+- Implement revealing module pattern
+- Add getters/setters for each state variable
+- Add simple event subscription system (subscribe/emit)
+- Update `sidepanel.html` to load state.js first
 
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (Settings render)
-- `src/sidepanel/sidepanel.css` (section styles if needed)
-
-**Completion Promise:** Settings tab shows "Data" section with "Export Vault" button. Clicking exports the vault as HTML file.
-
----
-
-## Phase 2: Import Feature
-
-### TG6-004: Implement Import Parser [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.3, 1.5
-
-**Goal:** Parse Netscape Bookmark HTML into vault group structure.
-
-**Tasks:**
-- Implement `parseNetscapeBookmarks(html)`:
-  - Use DOMParser to parse HTML
-  - Find folder headers (`<DT><H3>`)
-  - Find bookmarks (`<DT><A>`)
-  - Build groups array with tabs
-  - Handle nested folders: flatten with "Parent > Child" naming
-  - Skip empty folders (no bookmarks)
-  - Skip separator elements (`<HR>`)
-  - Handle bookmarks without folder: create "Imported Bookmarks" group
-- Return structure: `{ groups: [{ name, tabs: [{ url, title }] }] }`
-
-**Edge Cases:**
-- Chrome Bookmarks Bar, Other Bookmarks folders
-- Firefox toolbar, menu, unsorted bookmarks
-- Deeply nested folders (3+ levels)
-- Empty file or invalid HTML
-
-**Files to Modify:**
-- `src/common/import-export.js`
-
-**Completion Promise:** `parseNetscapeBookmarks()` correctly parses Chrome, Firefox, and Edge bookmark exports. Returns flat group structure.
-
----
-
-### TG6-005: Implement Import to Vault [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.4, 1.5
-
-**Goal:** Add parsed bookmark groups to vault storage.
-
-**Tasks:**
-- Implement `importToVault(parsedGroups)`:
-  - Get existing vault URLs for deduplication
-  - For each group:
-    - Filter out tabs with URLs already in vault
-    - Skip group if all tabs are duplicates
-    - Add group via `VaultStorage.addGroup()`
-  - Return stats: `{ groupsAdded, tabsAdded, duplicatesSkipped }`
-- Add helper to `storage.js` if needed: `VaultStorage.getAllUrls()`
-
-**Files to Modify:**
-- `src/common/import-export.js`
-- `src/common/storage.js` (if helper needed)
-
-**Completion Promise:** `importToVault()` adds groups to vault. Duplicate URLs are skipped. Returns accurate counts.
-
----
-
-### TG6-006: Add Import UI to Settings [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 1.4
-
-**Goal:** Add Import button and file picker to Settings tab.
-
-**Tasks:**
-- Add "Import Bookmarks" button to Data section (below Export)
-- Add description: "Import bookmarks or a previous export"
-- Create hidden file input (`accept=".html"`)
-- Wire button to trigger file input click
-- On file selected:
-  - Read file contents
-  - Parse with `parseNetscapeBookmarks()`
-  - Show confirmation dialog with counts
-  - On confirm: call `importToVault()`
-  - Show success toast with stats
-  - Refresh vault display
-
-**Confirmation Dialog Content:**
-```
-Import Bookmarks?
-
-Found X groups with Y tabs.
-
-This will add to your existing vault
-(nothing will be replaced or deleted).
-
-[Cancel] [Import]
-```
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-- `src/sidepanel/sidepanel.css` (dialog styles if needed)
-
-**Completion Promise:** Import button opens file picker. Selecting valid HTML shows confirmation dialog. Confirming imports to vault with toast feedback.
-
----
-
-### TG6-007: Import Error Handling [DONE]
-
-**Priority:** MEDIUM
-**PRD Reference:** Section 1.5
-
-**Goal:** Handle import errors gracefully.
-
-**Tasks:**
-- Handle invalid/corrupt HTML file
-- Handle file with no bookmarks
-- Handle file read errors
-- Show appropriate error toasts:
-  - "Invalid bookmark file"
-  - "No bookmarks found in file"
-  - "Failed to read file"
-- Log errors to console for debugging
-
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js` (error handling)
-- `src/common/import-export.js` (validation)
-
-**Completion Promise:** Invalid files show appropriate error messages. No crashes or unhandled exceptions.
-
----
-
-## Phase 3: Keyboard Shortcut
-
-### TG6-008: Add Commands to Manifest [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 2.1
-
-**Goal:** Define keyboard shortcut in manifest.json.
-
-**Tasks:**
-- Add `commands` section to manifest.json
-- Define `_execute_action` command
-- Set suggested keys:
-  - `default`: "Ctrl+Shift+G"
-  - `mac`: "Command+Shift+G"
-- Set description: "Open Tab Goblin"
-
-**Manifest Addition:**
-```json
-{
-  "commands": {
-    "_execute_action": {
-      "suggested_key": {
-        "default": "Ctrl+Shift+G",
-        "mac": "Command+Shift+G"
-      },
-      "description": "Open Tab Goblin"
-    }
-  }
-}
-```
-
-**Files to Modify:**
-- `manifest.json`
-
-**Completion Promise:** After extension reload, keyboard shortcut appears in `chrome://extensions/shortcuts`. Pressing shortcut toggles side panel.
-
----
-
-### TG6-009: Add Shortcut Display to Settings [DONE]
-
-**Priority:** HIGH
-**PRD Reference:** Section 2.2
-
-**Goal:** Display current keyboard shortcut in Settings with OS-appropriate formatting.
-
-**Tasks:**
-- Add "Keyboard Shortcut" section to Settings (between Appearance and Data)
-- Implement `getCurrentShortcut()`:
-  - Call `chrome.commands.getAll()`
-  - Find `_execute_action` command
-  - Return shortcut string or null
-- Implement `formatShortcutForOS(shortcut)`:
-  - Detect OS via `navigator.platform`
-  - Replace "Ctrl" with "Cmd" on macOS
-  - Keep "Ctrl" on Windows/Linux
-- Display current shortcut or "Not set"
-- Style shortcut as keyboard keys (rounded boxes)
-
-**OS Detection:**
+**File Structure:**
 ```javascript
-const isMac = navigator.platform.toLowerCase().includes('mac');
+const State = (function() {
+  // Private state
+  let _selectedTabIds = new Set();
+  let _subscribers = {};
+
+  return {
+    // Selection state
+    getSelectedTabIds() { return new Set(_selectedTabIds); },
+    addSelectedTab(id) { _selectedTabIds.add(id); this.emit('selection'); },
+    removeSelectedTab(id) { _selectedTabIds.delete(id); this.emit('selection'); },
+    clearSelection() { _selectedTabIds.clear(); this.emit('selection'); },
+    hasSelectedTab(id) { return _selectedTabIds.has(id); },
+    getSelectionCount() { return _selectedTabIds.size; },
+
+    // Event system
+    subscribe(event, callback) { /* ... */ },
+    emit(event, data) { /* ... */ },
+
+    // ... other state
+  };
+})();
 ```
 
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-- `src/sidepanel/sidepanel.css` (keyboard key styles)
-
-**Completion Promise:** Settings shows "Keyboard Shortcut" section. Current shortcut displayed with correct OS modifier. "Not set" shown if no shortcut configured.
+**Completion Promise:** State module exists with all current global variables migrated. Event system allows components to subscribe to state changes.
 
 ---
 
-### TG6-010: Add Configure Shortcut Link [DONE]
+### TG8-002: Migrate sidepanel.js to Use State Module
 
 **Priority:** HIGH
-**PRD Reference:** Section 2.3
+**Depends On:** TG8-001
 
-**Goal:** Provide link to Chrome's shortcut configuration page.
+**Goal:** Update all references to global variables to use State module.
 
 **Tasks:**
-- Add "Configure in Chrome Settings" button/link below shortcut display
-- On click: open `chrome://extensions/shortcuts` in new tab
-- Use `chrome.tabs.create({ url: 'chrome://extensions/shortcuts' })`
-- Add brief instruction text if shortcut is "Not set"
+- Replace `selectedTabIds` references with `State.getSelectedTabIds()`, etc.
+- Replace direct mutations with State setters
+- Remove global variable declarations from sidepanel.js
+- Test all selection/deselection flows
+- Test all accordion expand/collapse flows
 
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-
-**Completion Promise:** Clicking "Configure" opens Chrome's extension shortcuts page in new tab.
+**Completion Promise:** No global state variables remain in sidepanel.js. All state access goes through State module. All existing functionality works.
 
 ---
 
-## Phase 4: Polish and Testing
+## Phase 2: Navigation Extraction
 
-### TG6-011: Settings Section Ordering [DONE]
+### TG8-003: Create Navigation Module
 
-**Priority:** MEDIUM
-**PRD Reference:** UI Specifications
+**Priority:** HIGH
+**PRD Reference:** Navigation section
 
-**Goal:** Ensure Settings sections are in correct order.
+**Goal:** Extract tab bar navigation and panel switching to a dedicated module.
 
-**Correct Order:**
-1. Appearance (Theme Mode, Theme Palette)
-2. Keyboard Shortcut (Current shortcut, Configure link)
-3. Data (Export, Import)
-4. Home Tabs (Pattern list, Add pattern)
+**Functions to Extract:**
+- `updateTabBarUI()`
+- `showPanel(tabName)`
+- `switchToTab(tabName)`
+- `loadActiveTab()`
+- `saveActiveTab(tabName)`
+- `handleTabBarKeydown(e)`
 
 **Tasks:**
-- Review Settings render function
-- Ensure sections render in correct order
-- Verify visual spacing between sections
+- Create `src/sidepanel/modules/navigation.js`
+- Move navigation functions
+- Subscribe to State.currentTab changes
+- Expose `Navigation.init()` and `Navigation.switchToTab()`
+- Update sidepanel.js to use Navigation module
+- Update event listeners to use Navigation
 
-**Files to Modify:**
-- `src/sidepanel/sidepanel.js`
-
-**Completion Promise:** Settings tab sections appear in order: Appearance, Keyboard Shortcut, Data, Home Tabs.
+**Completion Promise:** Navigation module handles all tab switching. Panel visibility managed by Navigation. Keyboard navigation works.
 
 ---
 
-### TG6-012: Import/Export Round-Trip Test [DONE]
+## Phase 3: Live Tabs Modularization
+
+### TG8-004: Extract Tab Item Component
 
 **Priority:** HIGH
-**PRD Reference:** Section 1.3
 
-**Goal:** Verify export can be re-imported without data loss.
+**Goal:** Create reusable tab item component for Live Tabs.
 
-**Test Steps:**
-1. Create vault with multiple groups and tabs
-2. Export vault
-3. Clear vault (or use fresh profile)
-4. Import exported file
-5. Verify all groups and tabs restored correctly
-6. Verify timestamps preserved
+**Functions to Extract:**
+- `createFavicon()`
+- `createTabInfo()`
+- `createDomainTabItem()`
+- `createUngroupedTabItem()`
 
-**Manual Testing Checklist:**
-- [ ] Export creates valid HTML file
-- [ ] File opens in text editor with correct structure
-- [ ] File imports into Chrome bookmarks correctly
-- [ ] File imports back into Tab Goblin correctly
-- [ ] Group names preserved
-- [ ] Tab titles preserved
-- [ ] Tab URLs preserved
-- [ ] No data corruption
+**Tasks:**
+- Create `src/sidepanel/modules/live-tabs/tab-item.js`
+- Create `LiveTabItem` module with factory functions
+- Consolidate duplicate tab rendering logic
+- Handle checkbox state via State module
 
-**Completion Promise:** Exported vault can be imported back with all data intact.
+**Completion Promise:** `LiveTabItem.create()` returns a complete tab item element. Works for both grouped and ungrouped views.
 
 ---
 
-### TG6-013: Cross-Browser Import Test [DONE]
+### TG8-005: Extract Home Tabs UI
+
+**Priority:** HIGH
+
+**Goal:** Extract Home Tabs section rendering to dedicated module.
+
+**Functions to Extract:**
+- `renderHomeTabsSection()`
+- `createHomeTabItem()`
+- `toggleHomeTabsSection()`
+- `removeTabFromHome()`
+- `addTabToHome()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/live-tabs/home-tabs-ui.js`
+- Create `HomeTabsUI` module
+- Subscribe to relevant State changes
+- Handle collapse state via State module
+
+**Completion Promise:** `HomeTabsUI.render()` renders complete Home Tabs section. Collapse/expand works. Add/remove home tabs works.
+
+---
+
+### TG8-006: Extract Open Tabs UI
+
+**Priority:** HIGH
+
+**Goal:** Extract Open Tabs list rendering to dedicated module.
+
+**Functions to Extract:**
+- `renderOpenTabsList()`
+- `renderGroupedView()`
+- `renderUngroupedView()`
+- `createDomainGroupCard()`
+- `updateDomainGroupCheckbox()`
+- `updateDomainVaultButton()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/live-tabs/open-tabs-ui.js`
+- Create `OpenTabsUI` module
+- Use LiveTabItem for tab rendering
+- Handle view mode via Settings
+
+**Completion Promise:** `OpenTabsUI.render()` renders tabs in correct view mode. Group selection works. Vault buttons enable/disable correctly.
+
+---
+
+### TG8-007: Extract View Toggle
 
 **Priority:** MEDIUM
-**PRD Reference:** Section 1.3
 
-**Goal:** Verify import works with exports from other browsers.
+**Goal:** Extract view toggle component.
 
-**Test Steps:**
-1. Export bookmarks from Chrome
-2. Export bookmarks from Firefox (if available)
-3. Export bookmarks from Edge (if available)
-4. Import each into Tab Goblin
-5. Verify groups and tabs created correctly
+**Functions to Extract:**
+- `handleViewToggle()`
+- `updateViewToggleUI()`
+- `handleViewToggleKeydown()`
 
-**Edge Cases to Test:**
-- [ ] Chrome Bookmarks Bar folder
-- [ ] Chrome Other Bookmarks folder
-- [ ] Nested folder structures (3+ levels)
-- [ ] Special characters in titles
-- [ ] Very long URLs
-- [ ] Bookmarks without titles
+**Tasks:**
+- Create `src/sidepanel/modules/live-tabs/view-toggle.js`
+- Create `ViewToggle` module
+- Wire up to Settings for persistence
 
-**Completion Promise:** Chrome, Firefox, and Edge bookmark exports import correctly into Tab Goblin.
+**Completion Promise:** `ViewToggle.init()` sets up toggle behavior. Mode persists across sessions.
 
 ---
 
-### TG6-014: Shortcut Functionality Test [DONE]
+### TG8-008: Create Live Tabs Panel Coordinator
 
 **Priority:** HIGH
-**PRD Reference:** Section 2.1
+**Depends On:** TG8-004, TG8-005, TG8-006, TG8-007
 
-**Goal:** Verify keyboard shortcut works correctly.
+**Goal:** Create coordinator that orchestrates Live Tabs panel components.
 
-**Test Steps:**
-1. Install/reload extension
-2. Verify default shortcut appears in `chrome://extensions/shortcuts`
-3. Press Ctrl+Shift+G (or Cmd+Shift+G on Mac)
-4. Verify side panel opens
-5. Press shortcut again
-6. Verify side panel closes (toggles)
-7. Customize shortcut in Chrome settings
-8. Verify Settings displays new shortcut
+**Functions to Extract:**
+- `renderLiveTabsPanel()`
+- `refreshLivePanel()`
+- `updateLiveTabCount()`
+- `vaultSelectedTabs()`
+- `vaultDomainTabs()`
+- `vaultSingleTab()`
+- `selectAllTabs()`
+- `deselectAllTabs()`
+- `updateSelectedCount()`
 
-**Completion Promise:** Keyboard shortcut toggles side panel. Settings displays current shortcut correctly.
+**Tasks:**
+- Create `src/sidepanel/modules/live-tabs/index.js`
+- Create `LiveTabsPanel` module
+- Coordinate HomeTabsUI and OpenTabsUI
+- Handle footer actions (Vault Selected, Vault All)
+
+**Completion Promise:** `LiveTabsPanel.render()` renders complete Live Tabs panel. All vault operations work. Selection count updates.
 
 ---
 
-### TG6-015: Regression Testing [DONE]
+## Phase 4: Vault Modularization
+
+### TG8-009: Extract Vault Tab Item Component
 
 **Priority:** HIGH
 
-**Goal:** Verify all existing functionality works after changes.
+**Goal:** Create tab item component for Vault.
 
-**Test Cases:**
-- [ ] Vault operations (add, remove, restore groups)
-- [ ] Tab vaulting (manual, vault all, vault domain)
-- [ ] Home tab protection
-- [ ] History functionality
-- [ ] Theme switching (light/dark, all palettes)
-- [ ] Drag-and-drop between groups
-- [ ] Copy to clipboard
-- [ ] Search functionality
-- [ ] Keyboard navigation
+**Functions to Extract:**
+- `createTabItem()` (vault version)
 
-**Completion Promise:** All existing functionality works correctly. No regressions from v5.
+**Tasks:**
+- Create `src/sidepanel/modules/vault/tab-item.js`
+- Create `VaultTabItem` module
+- Handle drag-drop data attributes
+
+**Completion Promise:** `VaultTabItem.create()` returns complete vault tab item. Drag handle works.
+
+---
+
+### TG8-010: Extract Vault Group Card
+
+**Priority:** HIGH
+
+**Goal:** Extract vault group card rendering.
+
+**Functions to Extract:**
+- `createGroupCard()`
+- `restoreGroup()`
+- `copyGroupUrls()`
+- `showRenameDialog()`
+- `renameGroup()`
+- `deleteGroup()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/vault/group-card.js`
+- Create `VaultGroupCard` module
+- Use VaultTabItem for tab rendering
+
+**Completion Promise:** `VaultGroupCard.create()` returns complete group card. All group actions work (restore, rename, delete, copy).
+
+---
+
+### TG8-011: Extract History UI
+
+**Priority:** MEDIUM
+
+**Goal:** Extract history section rendering.
+
+**Functions to Extract:**
+- `renderHistorySection()`
+- `createHistoryItem()`
+- `restoreFromHistory()`
+- `removeFromHistory()`
+- `vaultFromHistory()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/vault/history-ui.js`
+- Create `HistoryUI` module
+- Handle collapse state via State
+
+**Completion Promise:** `HistoryUI.render()` renders history section. All history actions work.
+
+---
+
+### TG8-012: Extract Drag-Drop Handler
+
+**Priority:** MEDIUM
+
+**Goal:** Extract drag-and-drop logic.
+
+**Functions to Extract:**
+- `clearDragStyles()`
+- `handleDragStart()`
+- `handleDragEnd()`
+- `handleDragOver()`
+- `handleDrop()`
+- `handleGroupDragOver()`
+- `handleGroupDragLeave()`
+- `handleGroupDrop()`
+- `moveTabToPosition()`
+- `moveTabToGroup()`
+- `handleGroupReorderDragStart()`
+- `handleGroupReorderDragEnd()`
+- `reorderGroup()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/vault/drag-drop.js`
+- Create `DragDrop` module
+- Initialize with VaultPanel
+
+**Completion Promise:** `DragDrop.init()` sets up all drag-drop handlers. Tab reordering works. Group reordering works.
+
+---
+
+### TG8-013: Create Vault Panel Coordinator
+
+**Priority:** HIGH
+**Depends On:** TG8-009, TG8-010, TG8-011, TG8-012
+
+**Goal:** Create coordinator that orchestrates Vault panel components.
+
+**Functions to Extract:**
+- `renderVaultGroups()`
+- `restoreTab()`
+- `copyTabUrl()`
+- `deleteVaultTab()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/vault/index.js`
+- Create `VaultPanel` module
+- Coordinate VaultGroupCard, HistoryUI, DragDrop
+
+**Completion Promise:** `VaultPanel.render()` renders complete Vault panel. All tab operations work.
+
+---
+
+## Phase 5: Settings Modularization
+
+### TG8-014: Extract Theme Settings UI
+
+**Priority:** MEDIUM
+
+**Goal:** Extract theme mode and palette selection.
+
+**Functions to Extract:**
+- `initThemeSelector()`
+- `handleThemeModeChange()`
+- `handlePaletteChange()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/settings/theme-settings.js`
+- Create `ThemeSettingsUI` module
+
+**Completion Promise:** `ThemeSettingsUI.init()` sets up theme selection. Mode and palette changes work.
+
+---
+
+### TG8-015: Extract Shortcut UI
+
+**Priority:** LOW
+
+**Goal:** Extract keyboard shortcut display.
+
+**Functions to Extract:**
+- `isMacOS()`
+- `formatShortcutForOS()`
+- `getCurrentShortcut()`
+- `updateShortcutDisplay()`
+- `openShortcutConfig()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/settings/shortcut-ui.js`
+- Create `ShortcutUI` module
+
+**Completion Promise:** `ShortcutUI.init()` displays current shortcut. Config button works.
+
+---
+
+### TG8-016: Extract Data Settings UI
+
+**Priority:** LOW
+
+**Goal:** Extract import/export UI.
+
+**Functions to Extract:**
+- `exportVault()`
+- `handleImportFile()`
+- `triggerImportFilePicker()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/settings/data-settings.js`
+- Create `DataSettingsUI` module
+
+**Completion Promise:** `DataSettingsUI.init()` sets up import/export buttons. Both operations work.
+
+---
+
+### TG8-017: Extract Patterns UI
+
+**Priority:** LOW
+
+**Goal:** Extract home tab patterns management.
+
+**Functions to Extract:**
+- `renderHomePatterns()`
+- `addNewPattern()`
+- `addCurrentTabAsPattern()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/settings/patterns-ui.js`
+- Create `PatternsUI` module
+
+**Completion Promise:** `PatternsUI.render()` shows pattern list. Add/remove patterns works.
+
+---
+
+### TG8-018: Create Settings Panel Coordinator
+
+**Priority:** MEDIUM
+**Depends On:** TG8-014, TG8-015, TG8-016, TG8-017
+
+**Goal:** Create coordinator that orchestrates Settings panel components.
+
+**Tasks:**
+- Create `src/sidepanel/modules/settings/index.js`
+- Create `SettingsPanel` module
+- Coordinate all settings components
+
+**Completion Promise:** `SettingsPanel.render()` renders complete Settings panel.
+
+---
+
+## Phase 6: Search and Final Cleanup
+
+### TG8-019: Extract Search Module
+
+**Priority:** MEDIUM
+
+**Goal:** Extract global search functionality.
+
+**Functions to Extract:**
+- `matchesSearch()`
+- `handleGlobalSearch()`
+- `renderSearchResults()`
+- `createSearchResultGroupCard()`
+- `updateSearchUI()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/search.js`
+- Create `Search` module
+- Handle search state via State module
+
+**Completion Promise:** `Search.init()` sets up search handlers. Search works on Live and Vault panels.
+
+---
+
+### TG8-020: Extract Theme UI Module
+
+**Priority:** LOW
+
+**Goal:** Extract theme initialization (separate from settings UI).
+
+**Functions to Extract:**
+- `initTheme()`
+- `applyThemeFromSettings()`
+- `handleSystemThemeChange()`
+
+**Tasks:**
+- Create `src/sidepanel/modules/theme-ui.js`
+- Create `ThemeUI` module
+
+**Completion Promise:** `ThemeUI.init()` applies theme on load. System theme changes detected.
+
+---
+
+### TG8-021: Final sidepanel.js Cleanup
+
+**Priority:** HIGH
+**Depends On:** All other tickets
+
+**Goal:** Reduce sidepanel.js to initialization-only entry point.
+
+**Remaining Responsibilities:**
+- `init()` function
+- `setupEventListeners()` (delegating to modules)
+- `setupTabListeners()`
+- `checkOnboarding()`
+- `showOnboardingTip()`
+
+**Tasks:**
+- Remove all extracted functions
+- Update init() to initialize all modules
+- Update event listeners to delegate to modules
+- Verify no dead code remains
+
+**Target Structure:**
+```javascript
+// Tab Goblin - Side Panel Entry Point
+
+document.addEventListener('DOMContentLoaded', init);
+
+async function init() {
+  await ThemeUI.init();
+  Navigation.init();
+  Search.init();
+  await Navigation.switchToTab(await State.loadActiveTab());
+  setupEventListeners();
+  setupTabListeners();
+  await checkOnboarding();
+}
+
+function setupEventListeners() {
+  // Delegate to panel coordinators
+  LiveTabsPanel.setupEvents();
+  VaultPanel.setupEvents();
+  SettingsPanel.setupEvents();
+}
+
+// ... tab listeners and onboarding only
+```
+
+**Completion Promise:** `sidepanel.js` is under 200 lines. All functionality delegated to modules. No dead code.
+
+---
+
+### TG8-022: Update HTML Script Loading
+
+**Priority:** HIGH
+**Depends On:** All module creation tickets
+
+**Goal:** Update sidepanel.html with correct module load order.
+
+**Tasks:**
+- Add all new module scripts in dependency order
+- Verify no load order errors
+- Test in Chrome
+
+**Completion Promise:** Extension loads without errors. All modules available at runtime.
 
 ---
 
@@ -441,40 +554,40 @@ const isMac = navigator.platform.toLowerCase().includes('mac');
 
 | Priority | Tickets | Description |
 |----------|---------|-------------|
-| HIGH | TG6-001 to TG6-006, TG6-008 to TG6-010, TG6-012, TG6-014, TG6-015 | Core import/export, shortcut, testing |
-| MEDIUM | TG6-007, TG6-011, TG6-013 | Error handling, polish, cross-browser |
-
----
-
-## Dependency Graph
-
-```
-TG6-001 (module) → TG6-002 (export) → TG6-003 (export UI)
-TG6-001 (module) → TG6-004 (parser) → TG6-005 (import) → TG6-006 (import UI) → TG6-007 (errors)
-TG6-008 (manifest) → TG6-009 (display) → TG6-010 (configure link)
-TG6-003 + TG6-006 → TG6-011 (section order)
-TG6-002 + TG6-005 → TG6-012 (round-trip test)
-TG6-004 → TG6-013 (cross-browser test)
-TG6-008 + TG6-009 → TG6-014 (shortcut test)
-All → TG6-015 (regression)
-```
+| HIGH | TG8-001, 002, 003, 004, 005, 006, 008, 009, 010, 013, 021, 022 | Core state, navigation, panels |
+| MEDIUM | TG8-007, 011, 012, 014, 018, 019 | Supporting components |
+| LOW | TG8-015, 016, 017, 020 | Settings subsections, theme |
 
 ---
 
 ## Recommended Order
 
-1. **TG6-001** — Create import/export module
-2. **TG6-002** — Implement export function
-3. **TG6-003** — Add export UI
-4. **TG6-004** — Implement import parser
-5. **TG6-005** — Implement import to vault
-6. **TG6-006** — Add import UI
-7. **TG6-007** — Import error handling
-8. **TG6-008** — Add commands to manifest
-9. **TG6-009** — Add shortcut display
-10. **TG6-010** — Add configure link
-11. **TG6-011** — Settings section ordering
-12. **TG6-012** — Round-trip test
-13. **TG6-013** — Cross-browser test
-14. **TG6-014** — Shortcut test
-15. **TG6-015** — Regression testing
+### Week 1: Foundation
+1. TG8-001 — Create State Module
+2. TG8-002 — Migrate to State Module
+3. TG8-003 — Create Navigation Module
+
+### Week 2: Live Tabs
+4. TG8-004 — Extract Tab Item Component
+5. TG8-005 — Extract Home Tabs UI
+6. TG8-006 — Extract Open Tabs UI
+7. TG8-007 — Extract View Toggle
+8. TG8-008 — Create Live Tabs Coordinator
+
+### Week 3: Vault
+9. TG8-009 — Extract Vault Tab Item
+10. TG8-010 — Extract Vault Group Card
+11. TG8-011 — Extract History UI
+12. TG8-012 — Extract Drag-Drop Handler
+13. TG8-013 — Create Vault Coordinator
+
+### Week 4: Settings and Cleanup
+14. TG8-014 — Extract Theme Settings UI
+15. TG8-015 — Extract Shortcut UI
+16. TG8-016 — Extract Data Settings UI
+17. TG8-017 — Extract Patterns UI
+18. TG8-018 — Create Settings Coordinator
+19. TG8-019 — Extract Search Module
+20. TG8-020 — Extract Theme UI Module
+21. TG8-021 — Final Cleanup
+22. TG8-022 — Update HTML Script Loading

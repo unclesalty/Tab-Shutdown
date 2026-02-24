@@ -36,7 +36,8 @@ const DEFAULT_SETTINGS = {
   onboardingComplete: false,
   themeMode: 'system',         // 'system' | 'light' | 'dark'
   lightPalette: 'light',       // Theme key for light mode
-  darkPalette: 'slate-minimal' // Theme key for dark mode
+  darkPalette: 'slate-minimal', // Theme key for dark mode
+  liveTabsView: 'grouped'      // 'grouped' | 'ungrouped'
 };
 
 /**
