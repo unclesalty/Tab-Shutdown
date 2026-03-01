@@ -34,6 +34,51 @@ const LiveTabsPanel = (function() {
     document.getElementById('vaultAllBtn')?.addEventListener('click', shutdownAll);
     document.getElementById('selectAllBtn')?.addEventListener('click', () => setAllTabCheckboxes(true));
     document.getElementById('deselectAllBtn')?.addEventListener('click', () => setAllTabCheckboxes(false));
+
+    // Listen for domain group reorder events
+    State.subscribe('domainGroupReorder', refresh);
+  }
+
+  /**
+   * Render just the Home Tabs section (used when opening on Vault tab)
+   */
+  async function renderHomeTabsSection() {
+    const tabs = await chrome.tabs.query({});
+    const homePatterns = await HomeTabs.getHomePatterns();
+    const searchQuery = State.getSearchQuery();
+
+    // Categorize tabs into home tabs
+    const openTabsByUrl = new Map();
+    const openTabsByPattern = new Map();
+    const homeTabsToTrack = [];
+
+    for (const tab of tabs) {
+      if (UrlUtils.isSkippableUrl(tab.url)) continue;
+
+      const matchingPattern = HomeTabsUI.findMatchingPattern(tab.url, homePatterns);
+
+      if (matchingPattern) {
+        homeTabsToTrack.push({
+          url: tab.url,
+          title: tab.title,
+          favIconUrl: tab.favIconUrl
+        });
+        openTabsByUrl.set(tab.url, tab);
+        if (!openTabsByPattern.has(matchingPattern)) {
+          openTabsByPattern.set(matchingPattern, tab);
+        }
+      }
+    }
+
+    if (homeTabsToTrack.length > 0) {
+      await HomeTabs.trackManyHomeInstances(homeTabsToTrack);
+    }
+
+    // Filter home instances by search
+    const homeInstances = await HomeTabs.getHomeInstances();
+    const filteredInstances = homeInstances.filter(instance => matchesSearch(instance, searchQuery));
+
+    HomeTabsUI.render(filteredInstances, openTabsByUrl, openTabsByPattern, homePatterns);
   }
 
   async function render() {
@@ -88,7 +133,7 @@ const LiveTabsPanel = (function() {
     const filteredInstances = homeInstances.filter(instance => matchesSearch(instance, searchQuery));
 
     HomeTabsUI.render(filteredInstances, openTabsByUrl, openTabsByPattern, homePatterns);
-    OpenTabsUI.render(regularTabs, vaultedUrls, viewMode);
+    await OpenTabsUI.render(regularTabs, vaultedUrls, viewMode);
   }
 
   async function refresh() {
@@ -332,6 +377,7 @@ const LiveTabsPanel = (function() {
   return {
     init,
     render,
+    renderHomeTabsSection,
     refresh,
     updateSelectedCount,
     updateLiveTabCount

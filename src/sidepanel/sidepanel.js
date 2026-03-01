@@ -36,6 +36,7 @@ async function init() {
   // Initialize Navigation with panel render callbacks
   Navigation.init({
     vault: async () => {
+      await LiveTabsPanel.renderHomeTabsSection();
       await VaultPanel.renderHistory();
       await VaultPanel.renderGroups();
     },
@@ -52,6 +53,12 @@ async function init() {
   await Navigation.loadActiveTab();
   await LiveTabsPanel.updateLiveTabCount();
   await Navigation.renderCurrentPanel();
+
+  // Render home tabs if opening on vault (home tabs visible on both live and vault)
+  if (State.getCurrentTab() === 'vault') {
+    await LiveTabsPanel.renderHomeTabsSection();
+  }
+
   setupEventListeners();
   setupTabListeners();
   await checkOnboarding();
@@ -68,6 +75,7 @@ function setupTabListeners() {
     // Re-render current panel to reflect tab changes
     const currentTab = State.getCurrentTab();
     if (currentTab === 'vault') {
+      await LiveTabsPanel.renderHomeTabsSection();
       await VaultPanel.renderHistory();
       if (State.getSearchQuery()) {
         await Search.renderSearchResults();
