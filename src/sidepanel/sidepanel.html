@@ -233,6 +233,22 @@
           </div>
           <button id="addCurrentTabBtn" class="btn btn-secondary add-current-btn">Add Current Tab</button>
         </div>
+
+        <!-- About -->
+        <div class="settings-section about-section">
+          <div class="about-logo">
+            <img src="../assets/logo_goblin_main.png" alt="Tab Goblin" />
+          </div>
+          <div class="about-info">
+            <h2 class="about-title">Tab Goblin</h2>
+            <p class="about-version">Version 2.0.0</p>
+            <ul class="about-changelog">
+              <li>Modular architecture refactor for maintainability</li>
+              <li>Home Tabs section persists across Live Tabs and Vault</li>
+              <li>View toggle: grouped or ungrouped tab lists</li>
+            </ul>
+          </div>
+        </div>
       </div>
     </main>
 
@@ -251,6 +267,28 @@
   <script src="../common/ui-helpers.js"></script>
   <script src="../common/dialog.js"></script>
   <script src="../common/import-export.js"></script>
+  <!-- Sidepanel modules -->
+  <script src="modules/state.js"></script>
+  <script src="modules/navigation.js"></script>
+  <script src="modules/theme-ui.js"></script>
+  <script src="modules/search.js"></script>
+  <script src="modules/live-tabs/tab-item.js"></script>
+  <script src="modules/live-tabs/home-tabs-ui.js"></script>
+  <script src="modules/live-tabs/open-tabs-ui.js"></script>
+  <script src="modules/live-tabs/view-toggle.js"></script>
+  <script src="modules/live-tabs/index.js"></script>
+  <!-- Vault modules -->
+  <script src="modules/vault/tab-item.js"></script>
+  <script src="modules/vault/group-card.js"></script>
+  <script src="modules/vault/history-ui.js"></script>
+  <script src="modules/vault/drag-drop.js"></script>
+  <script src="modules/vault/index.js"></script>
+  <!-- Settings modules -->
+  <script src="modules/settings/theme-settings.js"></script>
+  <script src="modules/settings/shortcut-ui.js"></script>
+  <script src="modules/settings/data-settings.js"></script>
+  <script src="modules/settings/patterns-ui.js"></script>
+  <script src="modules/settings/index.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

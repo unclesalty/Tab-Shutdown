@@ -49,7 +49,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **PRD.md** — Full product requirements for v8 (modular architecture refactor)
 - **TICKETS.md** — Implementation tickets (check for `[DONE]` status)
 - **PROMPT.md** — Ralph Loop instructions (ONLY used with `/ralph-loop` command)
-- **context_items/opus-cursor-review.md** — Comprehensive code review (v6 baseline, fixes applied)
+- **context_items/claude_review.md** — Comprehensive code review (v6 baseline, fixes applied)
 - **archive/** — Completed v1-v7 iteration documents
 - **documentation/** — User guide, developer guide, contributing guide
 

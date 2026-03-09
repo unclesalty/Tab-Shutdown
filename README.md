@@ -1,6 +1,10 @@
 # Tab Goblin
 
-**Status:** v6 Complete
+<p align="center">
+  <img src="src/assets/logo_goblin_main.png" alt="Tab Goblin" width="200">
+</p>
+
+**Status:** v7.1 Complete
 
 A Chrome extension that fully closes tabs to reclaim RAM/CPU while preserving them in an organized vault for later restoration.
 
@@ -34,7 +38,17 @@ Unlike tab suspenders or discarding features, Tab Goblin **actually closes tabs*
 
 ## Version History
 
-### v6 (Current)
+### v7.1 (Current)
+- **New Branding** — Tab Goblin logo and custom icons
+- **Home Tabs Persistence** — Home Tabs section visible on Live Tabs and Vault panels
+- **View Toggle** — Switch between grouped (by domain) and ungrouped tab views
+- **About Section** — Version info and changelog in Settings
+
+### v7
+- **Modular Architecture** — Refactored sidepanel.js monolith into ~15 focused modules
+- **Centralized State** — Subscription-based state management
+
+### v6
 - **Import/Export** — Backup vault as Netscape Bookmark HTML, import from Chrome/Firefox/Edge
 - **Keyboard Shortcut** — `Ctrl+Shift+G` / `Cmd+Shift+G` to toggle side panel
 - **OS-Specific Display** — Settings shows shortcuts with correct modifier for your OS

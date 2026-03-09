@@ -11,16 +11,18 @@
   ],
   "action": {
     "default_icon": {
-      "16": "src/assets/icon16.png",
-      "48": "src/assets/icon48.png"
+      "16": "src/assets/logo_round_16.png",
+      "48": "src/assets/logo_round_48.png",
+      "128": "src/assets/logo_round_128.png"
     }
   },
   "side_panel": {
     "default_path": "src/sidepanel/sidepanel.html"
   },
   "icons": {
-    "16": "src/assets/icon16.png",
-    "48": "src/assets/icon48.png"
+    "16": "src/assets/logo_round_16.png",
+    "48": "src/assets/logo_round_48.png",
+    "128": "src/assets/logo_round_128.png"
   },
   "background": {
     "service_worker": "src/background/service-worker.js"

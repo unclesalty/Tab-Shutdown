@@ -37,7 +37,8 @@ const DEFAULT_SETTINGS = {
   themeMode: 'system',         // 'system' | 'light' | 'dark'
   lightPalette: 'light',       // Theme key for light mode
   darkPalette: 'slate-minimal', // Theme key for dark mode
-  liveTabsView: 'grouped'      // 'grouped' | 'ungrouped'
+  liveTabsView: 'grouped',     // 'grouped' | 'ungrouped'
+  domainGroupOrder: []         // Custom order for live tabs domain groups
 };
 
 /**
