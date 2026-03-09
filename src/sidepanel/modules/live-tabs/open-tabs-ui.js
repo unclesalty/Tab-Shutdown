@@ -13,6 +13,10 @@ const OpenTabsUI = (function() {
     onCloseDomainTabs: null
   };
 
+  // Drag state for domain group reordering
+  let _draggedGroupCard = null;
+  let _draggedDomain = null;
+
   /**
    * Initialize the module with action callbacks
    * @param {Object} callbacks - Action callbacks
@@ -27,9 +31,12 @@ const OpenTabsUI = (function() {
    * @param {Set} vaultedUrls - Set of already vaulted URLs
    * @param {string} viewMode - 'grouped' or 'ungrouped'
    */
-  function render(tabs, vaultedUrls, viewMode = 'grouped') {
+  async function render(tabs, vaultedUrls, viewMode = 'grouped') {
     const container = document.getElementById('domainGroupsList');
     const countEl = document.getElementById('openTabsCount');
+
+    // Preserve scroll position before re-rendering
+    const scrollTop = container.scrollTop;
 
     UIHelpers.clearContainer(container);
     countEl.textContent = tabs.length;
@@ -44,10 +51,13 @@ const OpenTabsUI = (function() {
     }
 
     if (viewMode === 'grouped') {
-      renderGroupedView(tabs, container, vaultedUrls);
+      await renderGroupedView(tabs, container, vaultedUrls);
     } else {
       renderUngroupedView(tabs, container, vaultedUrls);
     }
+
+    // Restore scroll position after re-rendering
+    container.scrollTop = scrollTop;
   }
 
   /**
@@ -56,18 +66,94 @@ const OpenTabsUI = (function() {
    * @param {HTMLElement} container - Container element
    * @param {Set} vaultedUrls - Set of already vaulted URLs
    */
-  function renderGroupedView(tabs, container, vaultedUrls) {
+  async function renderGroupedView(tabs, container, vaultedUrls) {
     const domainGroups = UrlUtils.groupTabsByDomain(tabs);
+    const domains = Object.keys(domainGroups);
 
-    // Sort domains by tab count (descending)
-    const sortedDomains = Object.keys(domainGroups).sort((a, b) =>
-      domainGroups[b].length - domainGroups[a].length
-    );
+    // Get persisted domain order
+    const savedOrder = await Settings.getSetting('domainGroupOrder') || [];
+
+    // Sort domains: persisted order first, then alphabetically for new domains
+    const sortedDomains = sortDomainsByOrder(domains, savedOrder);
+
+    // Update persisted order to include any new domains
+    await updateDomainOrder(sortedDomains);
 
     for (const domain of sortedDomains) {
       const domainTabs = domainGroups[domain];
       container.appendChild(createDomainGroupCard(domain, domainTabs, vaultedUrls));
     }
+  }
+
+  /**
+   * Sort domains by persisted order, with new domains sorted alphabetically at the end
+   * @param {string[]} domains - Current domains
+   * @param {string[]} savedOrder - Persisted domain order
+   * @returns {string[]} - Sorted domains
+   */
+  function sortDomainsByOrder(domains, savedOrder) {
+    const orderMap = new Map(savedOrder.map((d, i) => [d, i]));
+
+    // Separate known and new domains
+    const knownDomains = domains.filter(d => orderMap.has(d));
+    const newDomains = domains.filter(d => !orderMap.has(d));
+
+    // Sort known domains by their saved position
+    knownDomains.sort((a, b) => orderMap.get(a) - orderMap.get(b));
+
+    // Sort new domains alphabetically
+    newDomains.sort((a, b) => a.localeCompare(b));
+
+    return [...knownDomains, ...newDomains];
+  }
+
+  /**
+   * Update the persisted domain order (add new domains, remove stale ones)
+   * @param {string[]} currentDomains - Current domain list in sorted order
+   */
+  async function updateDomainOrder(currentDomains) {
+    const savedOrder = await Settings.getSetting('domainGroupOrder') || [];
+
+    // Only update if the order has changed
+    const currentSet = new Set(currentDomains);
+    const filteredSaved = savedOrder.filter(d => currentSet.has(d));
+
+    // Check if new domains were added or old ones removed
+    if (filteredSaved.length !== currentDomains.length ||
+        !currentDomains.every((d, i) => filteredSaved[i] === d || !savedOrder.includes(d))) {
+      await Settings.updateSetting('domainGroupOrder', currentDomains);
+    }
+  }
+
+  /**
+   * Reorder a domain group to a new position
+   * @param {string} sourceDomain - Domain being moved
+   * @param {string} targetDomain - Target domain for positioning
+   * @param {boolean} insertBefore - Insert before target (true) or after (false)
+   */
+  async function reorderDomainGroup(sourceDomain, targetDomain, insertBefore) {
+    const savedOrder = await Settings.getSetting('domainGroupOrder') || [];
+
+    const sourceIndex = savedOrder.indexOf(sourceDomain);
+    const targetIndex = savedOrder.indexOf(targetDomain);
+
+    if (sourceIndex === -1 || targetIndex === -1) return false;
+    if (sourceIndex === targetIndex) return false;
+
+    // Remove from current position
+    savedOrder.splice(sourceIndex, 1);
+
+    // Find new target index (may have shifted after removal)
+    let newTargetIndex = savedOrder.indexOf(targetDomain);
+    if (!insertBefore) {
+      newTargetIndex++;
+    }
+
+    // Insert at new position
+    savedOrder.splice(newTargetIndex, 0, sourceDomain);
+
+    await Settings.updateSetting('domainGroupOrder', savedOrder);
+    return true;
   }
 
   /**
@@ -133,6 +219,15 @@ const OpenTabsUI = (function() {
     header.setAttribute('tabindex', '0');
     header.setAttribute('aria-expanded', shouldExpand ? 'true' : 'false');
     header.setAttribute('aria-label', `${domain}, ${tabs.length} ${UIHelpers.pluralizeTabs(tabs.length)}`);
+
+    // Drag handle for reordering
+    const dragHandle = document.createElement('span');
+    dragHandle.className = 'domain-group-drag-handle';
+    dragHandle.textContent = '\u2630'; // Hamburger menu icon
+    dragHandle.title = 'Drag to reorder';
+    dragHandle.draggable = true;
+    dragHandle.addEventListener('dragstart', (e) => handleGroupDragStart(e, card, domain));
+    dragHandle.addEventListener('dragend', handleGroupDragEnd);
 
     const expand = document.createElement('span');
     expand.className = 'domain-group-expand';
@@ -204,10 +299,16 @@ const OpenTabsUI = (function() {
     actions.appendChild(vaultBtn);
     actions.appendChild(closeBtn);
 
+    header.appendChild(dragHandle);
     header.appendChild(expand);
     header.appendChild(groupCheckbox);
     header.appendChild(info);
     header.appendChild(actions);
+
+    // Drag-drop handlers for group reordering
+    card.addEventListener('dragover', handleGroupDragOver);
+    card.addEventListener('dragleave', handleGroupDragLeave);
+    card.addEventListener('drop', handleGroupDrop);
 
     const toggleExpand = (e) => {
       if (e.target.closest('.domain-group-actions') || e.target.closest('.domain-group-checkbox')) return;
@@ -290,6 +391,116 @@ const OpenTabsUI = (function() {
 
     if (vaultBtn) vaultBtn.disabled = !anySelected;
     if (closeBtn) closeBtn.disabled = !anySelected;
+  }
+
+  // ==================== Domain Group Drag-Drop Handlers ====================
+
+  /**
+   * Handle drag start for domain group reordering
+   */
+  function handleGroupDragStart(e, card, domain) {
+    e.stopPropagation();
+    _draggedGroupCard = card;
+    _draggedDomain = domain;
+
+    card.classList.add('dragging-group');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', JSON.stringify({
+      type: 'domain-group',
+      domain: domain
+    }));
+  }
+
+  /**
+   * Handle drag end for domain group reordering
+   */
+  function handleGroupDragEnd(e) {
+    if (_draggedGroupCard) {
+      _draggedGroupCard.classList.remove('dragging-group');
+    }
+    clearDragStyles();
+    _draggedGroupCard = null;
+    _draggedDomain = null;
+  }
+
+  /**
+   * Handle drag over a domain group card
+   */
+  function handleGroupDragOver(e) {
+    if (!_draggedDomain) return;
+
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const card = e.target.closest('.domain-group-card');
+    if (!card) return;
+
+    const targetDomain = card.dataset.domain;
+    if (targetDomain === _draggedDomain) return;
+
+    // Clear previous indicators
+    document.querySelectorAll('.domain-group-card.drop-above, .domain-group-card.drop-below')
+      .forEach(el => el.classList.remove('drop-above', 'drop-below'));
+
+    // Determine drop position
+    const rect = card.getBoundingClientRect();
+    const midpoint = rect.top + rect.height / 2;
+
+    if (e.clientY < midpoint) {
+      card.classList.add('drop-above');
+      card.classList.remove('drop-below');
+    } else {
+      card.classList.add('drop-below');
+      card.classList.remove('drop-above');
+    }
+  }
+
+  /**
+   * Handle drag leave from a domain group card
+   */
+  function handleGroupDragLeave(e) {
+    const card = e.target.closest('.domain-group-card');
+    if (!card) return;
+
+    const relatedTarget = e.relatedTarget;
+    if (relatedTarget && card.contains(relatedTarget)) return;
+
+    card.classList.remove('drop-above', 'drop-below');
+  }
+
+  /**
+   * Handle drop on a domain group card
+   */
+  async function handleGroupDrop(e) {
+    e.preventDefault();
+
+    const card = e.target.closest('.domain-group-card');
+    if (!card || !_draggedDomain) return;
+
+    const targetDomain = card.dataset.domain;
+    const wasDropAbove = card.classList.contains('drop-above');
+
+    clearDragStyles();
+
+    if (targetDomain === _draggedDomain) return;
+
+    const success = await reorderDomainGroup(_draggedDomain, targetDomain, wasDropAbove);
+    if (success) {
+      UIHelpers.showToast('Group reordered', 'success');
+      // Trigger refresh via LiveTabsPanel
+      if (_callbacks.onSelectionChange) {
+        // Use the existing refresh mechanism
+        State.emit('domainGroupReorder');
+      }
+    }
+  }
+
+  /**
+   * Clear all drag-related CSS classes
+   */
+  function clearDragStyles() {
+    document.querySelectorAll('.domain-group-card.drop-above, .domain-group-card.drop-below, .domain-group-card.dragging-group')
+      .forEach(el => el.classList.remove('drop-above', 'drop-below', 'dragging-group'));
   }
 
   // Public API
